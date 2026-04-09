@@ -1,14 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import {
   format, startOfMonth, endOfMonth, eachDayOfInterval,
   getDay, isSameMonth, isToday, parseISO, addMonths, subMonths,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, Repeat, Download, X, ExternalLink, Upload, CalendarDays, Link2Off, Info, Code2, Copy, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Repeat, Download, X, ExternalLink, Upload, CalendarDays, Link2Off, Link2, Info, Code2, Copy, Check } from 'lucide-react'
 import { useProject } from '@/contexts/ProjectContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { loadEventos, saveEventos, loadPautas, loadKanbanCards } from '@/lib/storage'
+import { loadEventos, saveEventos, loadPautas, loadKanbanCards, listProjects, saveProjectMeta } from '@/lib/storage'
 import { generateId, formatDate, todayISO } from '@/lib/utils'
 import {
   requestGoogleToken, revokeGoogleToken, fetchGCalEvents, createGCalEvent,
@@ -23,7 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useToast } from '@/hooks/useToast'
 import { ToastContainer } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
-import type { Evento, RecurrenceType } from '@/types'
+import type { Evento, RecurrenceType, ProjectMeta } from '@/types'
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
@@ -43,9 +43,10 @@ const colorMap: Record<string, { dot: string; bg: string; text: string }> = {
   red:    { dot: 'bg-red-500',    bg: 'bg-red-50',    text: 'text-red-700' },
   pink:   { dot: 'bg-pink-500',   bg: 'bg-pink-50',   text: 'text-pink-700' },
   teal:   { dot: 'bg-teal-500',   bg: 'bg-teal-50',   text: 'text-teal-700' },
-  google: { dot: 'bg-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-600' },
-  pauta:  { dot: 'bg-orange-400', bg: 'bg-orange-50', text: 'text-orange-600' },
-  kanban: { dot: 'bg-pink-400',   bg: 'bg-pink-50',   text: 'text-pink-600' },
+  google:       { dot: 'bg-blue-400',   bg: 'bg-blue-50 dark:bg-blue-900/30',     text: 'text-blue-600 dark:text-blue-300' },
+  pauta:        { dot: 'bg-orange-400', bg: 'bg-orange-50 dark:bg-orange-900/30', text: 'text-orange-600 dark:text-orange-300' },
+  kanban:       { dot: 'bg-pink-400',   bg: 'bg-pink-50 dark:bg-pink-900/30',     text: 'text-pink-600 dark:text-pink-300' },
+  crossproject: { dot: 'bg-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/30', text: 'text-violet-600 dark:text-violet-300' },
 }
 
 function expandRecurring(evento: Evento, monthDate: Date): string[] {
@@ -77,10 +78,13 @@ function expandRecurring(evento: Evento, monthDate: Date): string[] {
 }
 
 export function Efemerides() {
-  const { projectId } = useProject()
+  const { projectId, projectMeta } = useProject()
   const { session } = useAuth()
   const queryClient = useQueryClient()
   const { toasts, toast, dismiss } = useToast()
+
+  const isMember = !!projectMeta?.users.includes(session?.email ?? '')
+  const isShareEnabled = projectMeta?.calendarShareEnabled !== false
 
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [embedCopied, setEmbedCopied] = useState(false)
@@ -95,6 +99,7 @@ export function Efemerides() {
   const [evRecurrence, setEvRecurrence] = useState<RecurrenceType>('none')
   const [evColor, setEvColor] = useState('purple')
   const [saving, setSaving] = useState(false)
+  const [savingShare, setSavingShare] = useState(false)
 
   // Google Calendar integration
   const [gcalToken, setGcalToken] = useState<string | null>(() => getSavedToken())
@@ -139,6 +144,31 @@ export function Efemerides() {
     queryFn: () => loadKanbanCards(projectId),
   })
 
+  // Cross-project calendar integration
+  const { data: allProjects = [] } = useQuery({
+    queryKey: ['projects', session?.email],
+    queryFn: () => listProjects(session!.email),
+    enabled: !!session,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const currentOptedOut = projectMeta?.calendarShareEnabled === false
+
+  const peerProjectIds = useMemo(() => {
+    if (currentOptedOut) return []
+    return allProjects
+      .filter(p => p.id !== projectId && p.calendarShareEnabled !== false)
+      .map(p => p.id)
+  }, [allProjects, projectId, currentOptedOut])
+
+  const peerResults = useQueries({
+    queries: peerProjectIds.map(pid => ({
+      queryKey: ['eventos', pid],
+      queryFn: () => loadEventos(pid),
+      staleTime: 5 * 60 * 1000,
+    })),
+  })
+
   // Synthetic events from other modules
   const syntheticEventos = useMemo((): Evento[] => {
     const events: Evento[] = []
@@ -163,6 +193,27 @@ export function Efemerides() {
     }
     return events
   }, [pautaData, kanbanCards])
+
+  // Cross-project synthetic events
+  const crossProjectEventos = useMemo((): Evento[] => {
+    if (currentOptedOut) return []
+    const now = new Date().toISOString()
+    return peerProjectIds.flatMap((pid, i) => {
+      const peerMeta = allProjects.find(p => p.id === pid)
+      return (peerResults[i]?.data ?? [])
+        .filter(ev => !ev.sourceModule)
+        .map(ev => ({
+          ...ev,
+          id: `cross-${pid}-${ev.id}`,
+          sourceModule: 'crossproject' as const,
+          sourceId: ev.id,
+          sourceProjectId: pid,
+          sourceProjectName: peerMeta?.name ?? pid,
+          createdAt: now,
+          updatedAt: now,
+        }))
+    })
+  }, [peerProjectIds, peerResults, allProjects, currentOptedOut])
 
   // Fetch Google Calendar events when token or month changes
   useEffect(() => {
@@ -197,8 +248,8 @@ export function Efemerides() {
   }, [gcalToken, currentMonth])
 
   const allEventos = useMemo(
-    () => [...storedEventos, ...syntheticEventos, ...gcalEvents],
-    [storedEventos, syntheticEventos, gcalEvents]
+    () => [...storedEventos, ...syntheticEventos, ...gcalEvents, ...crossProjectEventos],
+    [storedEventos, syntheticEventos, gcalEvents, crossProjectEventos]
   )
 
   // Map date → eventos for the current month
@@ -401,6 +452,25 @@ export function Efemerides() {
     toast({ title: 'Evento removido' })
   }
 
+  async function handleToggleCalendarShare() {
+    if (!projectMeta || !isMember) return
+    setSavingShare(true)
+    try {
+      const updated: ProjectMeta = {
+        ...projectMeta,
+        calendarShareEnabled: !isShareEnabled,
+        updatedAt: new Date().toISOString(),
+      }
+      await saveProjectMeta(updated)
+      queryClient.setQueryData(['project-meta', projectId], updated)
+      queryClient.invalidateQueries({ queryKey: ['projects', session?.email] })
+      toast({ title: isShareEnabled ? 'Compartilhamento desativado' : 'Compartilhamento ativado' })
+    } catch (err) {
+      toast({ title: 'Erro', description: String(err), variant: 'destructive' })
+    }
+    setSavingShare(false)
+  }
+
   function googleCalendarUrl(ev: Evento): string {
     const date = ev.date.replace(/-/g, '')
     const endDate = ev.endDate ? ev.endDate.replace(/-/g, '') : date
@@ -592,7 +662,7 @@ export function Efemerides() {
                           col.bg, col.text,
                           isSynthetic && 'opacity-50 italic'
                         )}
-                        title={isSynthetic ? `Via ${ev.sourceModule}` : ev.title}
+                        title={isSynthetic ? `Via ${ev.sourceProjectName ?? ev.sourceModule}` : ev.title}
                       >
                         {ev.title}
                       </div>
@@ -628,7 +698,7 @@ export function Efemerides() {
                       <div className={cn('w-2 h-2 rounded-full flex-shrink-0', col.dot)} />
                       <span className="font-medium">{ev.title}</span>
                       {ev.recurrence !== 'none' && <Repeat className="w-3 h-3 opacity-60" />}
-                      {ev.sourceModule && <span className="text-xs opacity-60 ml-auto">via {ev.sourceModule}</span>}
+                      {ev.sourceModule && <span className="text-xs opacity-60 ml-auto">via {ev.sourceProjectName ?? ev.sourceModule}</span>}
                     </div>
                   )
                 })}
@@ -690,6 +760,45 @@ export function Efemerides() {
                 </button>
               </div>
             </>
+          )}
+        </div>
+      </details>
+
+      {/* Calendar sharing integration — collapsible */}
+      <details className="group border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden">
+        <summary className="flex items-center gap-2 px-4 py-2.5 cursor-pointer text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 select-none [list-style:none] [&::-webkit-details-marker]:hidden">
+          <Link2 className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>Integração entre projetos</span>
+          <ChevronRight className="w-3.5 h-3.5 ml-auto group-open:rotate-90 transition-transform" />
+        </summary>
+        <div className="px-4 pb-4 pt-2 space-y-3 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-700">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Quando ativa, os eventos deste projeto aparecem nos calendários dos outros projetos a que você pertence, e vice-versa.
+          </p>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              Compartilhar calendário
+            </span>
+            <button
+              onClick={handleToggleCalendarShare}
+              disabled={savingShare || !isMember}
+              role="switch"
+              aria-checked={isShareEnabled}
+              className={cn(
+                'relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50',
+                isShareEnabled ? 'bg-purple-600' : 'bg-gray-200 dark:bg-gray-600'
+              )}
+            >
+              <span className={cn(
+                'inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform',
+                isShareEnabled ? 'translate-x-4' : 'translate-x-0.5'
+              )} />
+            </button>
+          </div>
+          {peerProjectIds.length > 0 && isShareEnabled && (
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              {peerProjectIds.length === 1 ? '1 projeto integrado' : `${peerProjectIds.length} projetos integrados`}
+            </p>
           )}
         </div>
       </details>

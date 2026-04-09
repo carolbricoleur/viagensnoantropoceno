@@ -17,6 +17,7 @@ export interface ProjectMeta {
   name: string
   createdBy: string
   users: string[]
+  calendarShareEnabled?: boolean  // undefined / true = opt-in; false = opt-out
   createdAt: string
   updatedAt: string
 }
@@ -162,8 +163,10 @@ export interface Evento {
   tags: string[]
   recurrence: RecurrenceType
   description?: string
-  sourceModule?: 'pautas' | 'avisos' | 'kanban' | 'google'
+  sourceModule?: 'pautas' | 'avisos' | 'kanban' | 'google' | 'crossproject'
   sourceId?: string
+  sourceProjectId?: string
+  sourceProjectName?: string
   importBatchId?: string
   notified7?: boolean
   notified1?: boolean
