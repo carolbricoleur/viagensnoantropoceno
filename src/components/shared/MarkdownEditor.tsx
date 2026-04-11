@@ -328,7 +328,16 @@ export function MarkdownRenderer({ content, className }: { content: string; clas
   if (!content) return null
   return (
     <div className={cn('prose prose-sm max-w-none text-gray-800 leading-relaxed', className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children, ...props }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   )
 }

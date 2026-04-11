@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
 import { Plus, GripVertical, Trash2, Download, Tag, FolderPlus, ChevronDown, ChevronUp, X, SendHorizonal, Pencil, Check } from 'lucide-react'
@@ -37,6 +38,7 @@ export function Pautas() {
   const { projectId, projectMeta } = useProject()
   const queryClient = useQueryClient()
   const { toasts, toast, dismiss } = useToast()
+  const navigate = useNavigate()
 
   const [quickAdd, setQuickAdd] = useState('')
   const [quickSectionId, setQuickSectionId] = useState<string | undefined>(undefined)
@@ -223,6 +225,7 @@ export function Pautas() {
       // Remove from Pautas
       await handleDeleteItem(item.id)
       toast({ title: 'Pauta enviada para Conteúdos' })
+      navigate('../conteudos')
     } catch (err) {
       toast({ title: 'Erro ao encaminhar', description: String(err), variant: 'destructive' })
     }
