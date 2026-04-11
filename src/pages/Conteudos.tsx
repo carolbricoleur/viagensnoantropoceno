@@ -58,7 +58,22 @@ type SortCol = 'descricao' | 'atribuicao' | 'prazo' | 'tipo' | 'importancia' | '
 
 // ─── Avatar chip ──────────────────────────────────────────────────────────
 
-function UserChip({ email, onClear }: { email: string; onClear?: () => void }) {
+function UserChip({ email, isExternal, onClear }: { email: string; isExternal?: boolean; onClear?: () => void }) {
+  if (isExternal) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className="w-5 h-5 rounded-full flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-400 flex-shrink-0">
+          <User className="w-3 h-3" />
+        </span>
+        <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[90px]">{email.split('@')[0]}</span>
+        {onClear && (
+          <button onClick={onClear} className="text-gray-300 hover:text-red-400 flex-shrink-0">
+            <X className="w-3 h-3" />
+          </button>
+        )}
+      </span>
+    )
+  }
   const colors = ['bg-violet-200 text-violet-800', 'bg-blue-200 text-blue-800', 'bg-green-200 text-green-800', 'bg-amber-200 text-amber-800', 'bg-pink-200 text-pink-800']
   const idx = email.charCodeAt(0) % colors.length
   const initials = email.slice(0, 2).toUpperCase()
@@ -159,9 +174,26 @@ function UserPicker({
           </button>
         ))}
       </div>
+      <div className="border-t border-gray-100 dark:border-gray-700 px-2 py-1.5">
+        <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1">Usuário externo</p>
+        <input
+          type="email"
+          placeholder="outro@email.com"
+          className="w-full text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-1 focus:ring-purple-400"
+          onMouseDown={e => e.stopPropagation()}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              const val = (e.target as HTMLInputElement).value.trim()
+              if (val) { onChange(val); setOpen(false); setQuery('') }
+            }
+          }}
+        />
+      </div>
     </div>,
     document.body
   ) : null
+
+  const isExternal = !!value && !users.includes(value)
 
   return (
     <div className="relative">
@@ -171,7 +203,7 @@ function UserPicker({
         className="flex items-center gap-1 text-xs min-w-0"
       >
         {value
-          ? <UserChip email={value} />
+          ? <UserChip email={value} isExternal={isExternal} />
           : <span className="text-gray-400 flex items-center gap-1"><User className="w-3 h-3" />{placeholder}</span>
         }
       </button>
@@ -202,6 +234,22 @@ export function Conteudos() {
   const [mdDialogItem, setMdDialogItem] = useState<ConteudoItem | null>(null)
   const [mdBody, setMdBody] = useState('')
   const [savingMd, setSavingMd] = useState(false)
+
+  // Progresso dropdown (portal-based)
+  const [progressoOpen, setProgressoOpen] = useState<string | null>(null)
+  const [progressoPos, setProgressoPos] = useState({ top: 0, left: 0 })
+  useEffect(() => {
+    if (!progressoOpen) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node
+      // ignore clicks inside the dropdown portal itself (data-progresso-dropdown)
+      const dropEl = document.querySelector('[data-progresso-dropdown]')
+      if (dropEl && dropEl.contains(target)) return
+      setProgressoOpen(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [progressoOpen])
 
   // New row
   const [addingNew, setAddingNew] = useState(false)
@@ -249,10 +297,10 @@ export function Conteudos() {
     else { setSortCol(col); setSortAsc(true) }
   }
 
-  // Cycle progresso
-  async function cycleProgresso(item: ConteudoItem) {
-    const idx = PROGRESSO_CYCLE.indexOf(item.progresso)
-    const next = PROGRESSO_CYCLE[(idx + 1) % PROGRESSO_CYCLE.length]
+  // Set progresso (non-linear: accepts any target stage directly)
+  async function setProgresso(item: ConteudoItem, next: ConteudoProgresso) {
+    setProgressoOpen(null)
+    if (next === item.progresso) return
     const now = new Date().toISOString()
 
     // If leaving 'pronto' and a Kanban card exists, remove it to avoid duplicates
@@ -320,7 +368,7 @@ export function Conteudos() {
   async function updateField(item: ConteudoItem, patch: Partial<ConteudoItem>, notifyEmail?: string) {
     const updated: ConteudoItem = { ...item, ...patch, updatedAt: new Date().toISOString() }
     await saveData({ ...data, items: data.items.map(i => i.id === item.id ? updated : i) })
-    if (notifyEmail && notifyEmail !== session?.email) {
+    if (notifyEmail && notifyEmail !== session?.email && users.includes(notifyEmail)) {
       await sendMentionNotification({
         mentionerEmail: session!.email,
         mentionedEmail: notifyEmail,
@@ -514,11 +562,15 @@ export function Conteudos() {
         {/* Progresso */}
         <td className="px-3 py-2">
           <button
-            onClick={() => cycleProgresso(item)}
+            onClick={e => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              setProgressoPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
+              setProgressoOpen(prev => prev === item.id ? null : item.id)
+            }}
             className={cn('text-[11px] px-2 py-0.5 rounded-full font-medium cursor-pointer select-none whitespace-nowrap', PROGRESSO_CLASSES[item.progresso])}
-            title="Clique para avançar o progresso"
+            title="Clique para selecionar o progresso"
           >
-            {PROGRESSO_LABELS[item.progresso]}
+            {PROGRESSO_LABELS[item.progresso]} ▾
           </button>
         </td>
 
@@ -717,6 +769,36 @@ export function Conteudos() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Progresso dropdown portal */}
+      {progressoOpen && (() => {
+        const item = [...activeItems, ...doneItems].find(i => i.id === progressoOpen)
+        if (!item) return null
+        return createPortal(
+          <div
+            data-progresso-dropdown
+            style={{ position: 'absolute', top: progressoPos.top, left: progressoPos.left, zIndex: 9999 }}
+            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 min-w-[200px]"
+          >
+            {PROGRESSO_CYCLE.map(p => (
+              <button
+                key={p}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => setProgresso(item, p)}
+                className={cn(
+                  'w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2',
+                  p === item.progresso && 'font-semibold'
+                )}
+              >
+                <span className={cn('w-2 h-2 rounded-full flex-shrink-0', PROGRESSO_CLASSES[p])} />
+                {PROGRESSO_LABELS[p]}
+                {p === item.progresso && <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500">atual</span>}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )
+      })()}
 
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </div>

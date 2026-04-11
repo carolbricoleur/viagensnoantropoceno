@@ -140,11 +140,13 @@ function KanbanCardView({
   onEdit,
   onQuickAttach,
   onDownloadCard,
+  projectUsers = [],
 }: {
   card: KanbanCard
   onEdit: () => void
   onQuickAttach: (files: FileList) => void
   onDownloadCard: (fmt: 'md' | 'docx' | 'zip') => void
+  projectUsers?: string[]
 }) {
   const [showLog, setShowLog] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -242,13 +244,13 @@ function KanbanCardView({
         })}
         {card.assignee && (
           <span className="flex items-center gap-0.5 text-[10px] text-gray-500" title={`Responsável: ${card.assignee}`}>
-            <User className="w-3 h-3 text-violet-400" />
+            <User className={cn('w-3 h-3', projectUsers.includes(card.assignee) ? 'text-violet-400' : 'text-gray-400')} />
             {card.assignee.split('@')[0]}
           </span>
         )}
         {card.reviewer && (
           <span className="flex items-center gap-0.5 text-[10px] text-gray-500" title={`Revisor: ${card.reviewer}`}>
-            <UserCheck className="w-3 h-3 text-blue-400" />
+            <UserCheck className={cn('w-3 h-3', projectUsers.includes(card.reviewer) ? 'text-blue-400' : 'text-gray-400')} />
             {card.reviewer.split('@')[0]}
           </span>
         )}
@@ -507,8 +509,9 @@ export function Kanban() {
         ? [...new Set([...cardPlatforms, cardCustomPlatform.trim()])]
         : cardPlatforms
 
-      // Notify reviewer if newly set
-      if (cardReviewer && cardReviewer !== editCard?.reviewer && cardReviewer !== session?.email) {
+      // Notify reviewer if newly set and is a project member
+      if (cardReviewer && cardReviewer !== editCard?.reviewer && cardReviewer !== session?.email
+          && projectMeta?.users.includes(cardReviewer)) {
         added.push(cardReviewer)
       }
 
@@ -1076,6 +1079,7 @@ export function Kanban() {
                                     <KanbanCardView
                                       card={card}
                                       onEdit={() => openEdit(card)}
+                                      projectUsers={projectMeta?.users ?? []}
                                       onQuickAttach={files => {
                                         if (card.pautaId) { toast({ title: 'Abra o card para anexar mídias' }); return }
                                         handleQuickAttach(card, files)
@@ -1163,28 +1167,32 @@ export function Kanban() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Responsável</Label>
-                <select
-                  className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                <input
+                  list="kanban-assignees"
                   value={cardAssignee}
                   onChange={e => setCardAssignee(e.target.value)}
-                >
-                  <option value="">Ninguém</option>
-                  {projectMeta?.users.map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
+                  placeholder="Ninguém"
+                  className="flex h-9 w-full rounded-md border border-gray-200 bg-white dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                />
+                <datalist id="kanban-assignees">
+                  {projectMeta?.users.map(u => <option key={u} value={u} />)}
+                </datalist>
               </div>
               <div className="space-y-1.5">
                 <Label>
                   Revisor
                   {editColumn === 'revisao-aprovacao' && <span className="ml-1 text-[10px] text-amber-600 font-normal">(necessário nesta coluna)</span>}
                 </Label>
-                <select
-                  className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                <input
+                  list="kanban-reviewers"
                   value={cardReviewer}
                   onChange={e => setCardReviewer(e.target.value)}
-                >
-                  <option value="">Não definido</option>
-                  {projectMeta?.users.map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
+                  placeholder="Não definido"
+                  className="flex h-9 w-full rounded-md border border-gray-200 bg-white dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                />
+                <datalist id="kanban-reviewers">
+                  {projectMeta?.users.map(u => <option key={u} value={u} />)}
+                </datalist>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

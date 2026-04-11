@@ -536,11 +536,63 @@ export function Efemerides() {
     URL.revokeObjectURL(url)
   }
 
-  // Build calendar grid
-  const monthStart = startOfMonth(currentMonth)
-  const monthEnd = endOfMonth(currentMonth)
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd })
-  const startOffset = getDay(monthStart)
+  // Multi-day event helpers
+  function isMultiDay(ev: Evento): boolean {
+    return !!ev.endDate && ev.endDate > ev.date
+  }
+
+  const calendarWeeks = useMemo(() => {
+    const start = startOfMonth(currentMonth)
+    const end = endOfMonth(currentMonth)
+    const days = eachDayOfInterval({ start, end })
+    const offset = getDay(start)
+    const cells: (Date | null)[] = [...Array(offset).fill(null), ...days]
+    while (cells.length % 7 !== 0) cells.push(null)
+    const weeks: (Date | null)[][] = []
+    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7))
+    return weeks
+  }, [currentMonth])
+
+  const multiDayEvents = useMemo(
+    () => allEventos.filter(isMultiDay),
+    [allEventos]
+  )
+
+  const singleDayEventsByDate = useMemo(() => {
+    const map = new Map<string, Evento[]>()
+    for (const ev of allEventos) {
+      if (isMultiDay(ev)) continue
+      const dates = expandRecurring(ev, currentMonth)
+      for (const d of dates) {
+        if (!map.has(d)) map.set(d, [])
+        map.get(d)!.push(ev)
+      }
+    }
+    return map
+  }, [allEventos, currentMonth])
+
+  function getWeekSpans(week: (Date | null)[]) {
+    const realDays = week.filter(Boolean) as Date[]
+    if (!realDays.length) return []
+    const weekStart = format(realDays[0], 'yyyy-MM-dd')
+    const weekEnd = format(realDays[realDays.length - 1], 'yyyy-MM-dd')
+
+    return multiDayEvents.flatMap(ev => {
+      if (ev.date > weekEnd || ev.endDate! < weekStart) return []
+      const clampedStart = ev.date > weekStart ? ev.date : weekStart
+      const clampedEnd = ev.endDate! < weekEnd ? ev.endDate! : weekEnd
+      const startCol = week.findIndex(d => d && format(d, 'yyyy-MM-dd') === clampedStart) + 1
+      const endCol = week.findIndex(d => d && format(d, 'yyyy-MM-dd') === clampedEnd) + 1
+      if (startCol <= 0 || endCol <= 0) return []
+      return [{
+        ev,
+        startCol,
+        colSpan: endCol - startCol + 1,
+        continuesLeft: ev.date < weekStart,
+        continuesRight: ev.endDate! > weekEnd,
+      }]
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -620,37 +672,15 @@ export function Efemerides() {
           ))}
         </div>
 
-        {/* Day grid */}
-        <div className="grid grid-cols-7">
-          {/* Offset empty cells */}
-          {Array.from({ length: startOffset }).map((_, i) => (
-            <div key={`empty-${i}`} className="h-24 border-b border-r border-gray-50 dark:border-gray-700" />
-          ))}
-
-          {days.map(day => {
-            const dateStr = format(day, 'yyyy-MM-dd')
-            const events = eventsByDate.get(dateStr) ?? []
-            const isCurrentDay = isToday(day)
-            const isCurrentMonth = isSameMonth(day, currentMonth)
-
-            return (
-              <div
-                key={dateStr}
-                className={cn(
-                  'h-24 border-b border-r border-gray-100 dark:border-gray-700 p-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors',
-                  !isCurrentMonth && 'opacity-30',
-                  selectedDate === dateStr && 'bg-purple-50'
-                )}
-                onClick={() => { setSelectedDate(dateStr === selectedDate ? '' : dateStr); openNew(dateStr) }}
-              >
-                <div className={cn(
-                  'text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full mb-1',
-                  isCurrentDay ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-300'
-                )}>
-                  {format(day, 'd')}
-                </div>
-                <div className="space-y-0.5 overflow-hidden">
-                  {events.slice(0, 3).map(ev => {
+        {/* Weeks */}
+        {calendarWeeks.map((week, weekIdx) => {
+          const spans = getWeekSpans(week)
+          return (
+            <div key={weekIdx}>
+              {/* Multi-day event bars */}
+              {spans.length > 0 && (
+                <div className="grid grid-cols-7 px-0 gap-y-0.5 pt-0.5">
+                  {spans.map(({ ev, startCol, colSpan, continuesLeft, continuesRight }) => {
                     const col = colorMap[ev.tags[0]] ?? colorMap.purple
                     const isSynthetic = !!ev.sourceModule
                     return (
@@ -658,24 +688,78 @@ export function Efemerides() {
                         key={ev.id}
                         onClick={e => { e.stopPropagation(); openEdit(ev) }}
                         className={cn(
-                          'text-[10px] px-1 py-0.5 rounded truncate leading-tight',
+                          'h-5 px-1.5 text-[10px] leading-5 truncate cursor-pointer transition-opacity hover:opacity-80',
                           col.bg, col.text,
-                          isSynthetic && 'opacity-50 italic'
+                          !continuesLeft && 'rounded-l',
+                          !continuesRight && 'rounded-r',
+                          isSynthetic && 'opacity-60 italic'
                         )}
+                        style={{ gridColumn: `${startCol} / span ${colSpan}` }}
                         title={isSynthetic ? `Via ${ev.sourceProjectName ?? ev.sourceModule}` : ev.title}
                       >
-                        {ev.title}
+                        {!continuesLeft && ev.title}
                       </div>
                     )
                   })}
-                  {events.length > 3 && (
-                    <div className="text-[9px] text-gray-400 dark:text-gray-500 px-1">+{events.length - 3} mais</div>
-                  )}
                 </div>
+              )}
+
+              {/* Day cells */}
+              <div className="grid grid-cols-7">
+                {week.map((day, dayIdx) => {
+                  if (!day) {
+                    return <div key={`empty-${weekIdx}-${dayIdx}`} className="h-24 border-b border-r border-gray-50 dark:border-gray-700" />
+                  }
+                  const dateStr = format(day, 'yyyy-MM-dd')
+                  const events = singleDayEventsByDate.get(dateStr) ?? []
+                  const isCurrentDay = isToday(day)
+                  const isCurrentMonth = isSameMonth(day, currentMonth)
+                  return (
+                    <div
+                      key={dateStr}
+                      className={cn(
+                        'h-24 border-b border-r border-gray-100 dark:border-gray-700 p-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors',
+                        !isCurrentMonth && 'opacity-30',
+                        selectedDate === dateStr && 'bg-purple-50 dark:bg-purple-950/20'
+                      )}
+                      onClick={() => { setSelectedDate(dateStr === selectedDate ? '' : dateStr); openNew(dateStr) }}
+                    >
+                      <div className={cn(
+                        'text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full mb-1',
+                        isCurrentDay ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-300'
+                      )}>
+                        {format(day, 'd')}
+                      </div>
+                      <div className="space-y-0.5 overflow-hidden">
+                        {events.slice(0, 3).map(ev => {
+                          const col = colorMap[ev.tags[0]] ?? colorMap.purple
+                          const isSynthetic = !!ev.sourceModule
+                          return (
+                            <div
+                              key={ev.id}
+                              onClick={e => { e.stopPropagation(); openEdit(ev) }}
+                              className={cn(
+                                'text-[10px] px-1 py-0.5 rounded truncate leading-tight',
+                                col.bg, col.text,
+                                isSynthetic && 'opacity-50 italic'
+                              )}
+                              title={isSynthetic ? `Via ${ev.sourceProjectName ?? ev.sourceModule}` : ev.title}
+                            >
+                              {ev.title}
+                            </div>
+                          )
+                        })}
+                        {events.length > 3 && (
+                          <div className="text-[9px] text-gray-400 dark:text-gray-500 px-1">+{events.length - 3} mais</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            )
-          })}
-        </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* Event list for the month */}
