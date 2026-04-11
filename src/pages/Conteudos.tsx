@@ -61,11 +61,11 @@ type SortCol = 'descricao' | 'atribuicao' | 'prazo' | 'tipo' | 'importancia' | '
 function UserChip({ email, isExternal, onClear }: { email: string; isExternal?: boolean; onClear?: () => void }) {
   if (isExternal) {
     return (
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-1 min-w-0">
         <span className="w-5 h-5 rounded-full flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-400 flex-shrink-0">
           <User className="w-3 h-3" />
         </span>
-        <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[90px]">{email.split('@')[0]}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[160px]" title={email}>{email}</span>
         {onClear && (
           <button onClick={onClear} className="text-gray-300 hover:text-red-400 flex-shrink-0">
             <X className="w-3 h-3" />
@@ -101,6 +101,7 @@ function UserPicker({
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [externalInput, setExternalInput] = useState('')
   const [pos, setPos] = useState({ top: 0, left: 0, width: 220 })
   const triggerRef = useRef<HTMLButtonElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
@@ -179,12 +180,14 @@ function UserPicker({
         <input
           type="email"
           placeholder="outro@email.com"
+          value={externalInput}
+          onChange={e => setExternalInput(e.target.value)}
           className="w-full text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-1 focus:ring-purple-400"
           onMouseDown={e => e.stopPropagation()}
           onKeyDown={e => {
             if (e.key === 'Enter') {
-              const val = (e.target as HTMLInputElement).value.trim()
-              if (val) { onChange(val); setOpen(false); setQuery('') }
+              const val = externalInput.trim()
+              if (val) { onChange(val); setOpen(false); setQuery(''); setExternalInput('') }
             }
           }}
         />
@@ -199,7 +202,14 @@ function UserPicker({
     <div className="relative">
       <button
         ref={triggerRef}
-        onClick={() => { setOpen(v => !v); setQuery('') }}
+        onClick={() => {
+          const willOpen = !open
+          setOpen(willOpen)
+          setQuery('')
+          // Pre-fill external input with current value if it's an external user
+          if (willOpen && value && !users.includes(value)) setExternalInput(value)
+          else if (willOpen) setExternalInput('')
+        }}
         className="flex items-center gap-1 text-xs min-w-0"
       >
         {value
