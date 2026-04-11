@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Download, X, BookOpen } from 'lucide-react'
+import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
+import { Plus, Download, X, BookOpen, GripVertical } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadPoliticas, savePolitica, deletePolitica } from '@/lib/storage'
@@ -41,10 +42,13 @@ export function Politicas() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [exportOpen])
 
-  const { data: politicas = [], isLoading } = useQuery({
+  const { data: rawPoliticas = [], isLoading } = useQuery({
     queryKey: ['politicas', projectId],
     queryFn: () => loadPoliticas(projectId),
   })
+
+  // Sort by order field (treat missing order as 0 for backward compat)
+  const politicas = [...rawPoliticas].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 
   function openNew() {
     setEditPolitica(null); setTitle(''); setBody('')
@@ -67,7 +71,7 @@ export function Politicas() {
 
       const politica: Politica = editPolitica
         ? { ...editPolitica, title: title.trim(), body, mentions: newMentions, updatedAt: now }
-        : { id: generateId(), title: title.trim(), body, mentions: newMentions, createdAt: now, updatedAt: now }
+        : { id: generateId(), title: title.trim(), body, mentions: newMentions, order: rawPoliticas.length, createdAt: now, updatedAt: now }
 
       await savePolitica(projectId, politica)
       queryClient.setQueryData(['politicas', projectId], (prev: Politica[] = []) =>
@@ -100,6 +104,29 @@ export function Politicas() {
     toast({ title: 'Política removida' })
   }
 
+  function onDragEnd(result: DropResult) {
+    if (!result.destination || result.destination.index === result.source.index) return
+
+    const reordered = [...politicas]
+    const [moved] = reordered.splice(result.source.index, 1)
+    reordered.splice(result.destination.index, 0, moved)
+    const withOrder = reordered.map((p, i) => ({ ...p, order: i }))
+
+    // Optimistic update
+    queryClient.setQueryData(['politicas', projectId], withOrder)
+
+    // Persist each changed politica in parallel
+    Promise.all(
+      withOrder
+        .filter((p, i) => p.order !== politicas[i]?.order || p.id !== politicas[i]?.id)
+        .map(p => savePolitica(projectId, p))
+    ).catch(() => {
+      toast({ title: 'Erro ao reordenar políticas', variant: 'destructive' })
+      // Revert on error
+      queryClient.setQueryData(['politicas', projectId], rawPoliticas)
+    })
+  }
+
   async function exportAllPDF() {
     if (politicas.length === 0) return
     try {
@@ -120,7 +147,6 @@ export function Politicas() {
 
         pdf.setFontSize(10)
         pdf.setFont('helvetica', 'normal')
-        // Strip basic markdown
         const text = p.body
           .replace(/#{1,6}\s/g, '')
           .replace(/\*\*([^*]+)\*\*/g, '$1')
@@ -262,27 +288,60 @@ export function Politicas() {
             </ol>
           </div>
 
-          <div className="space-y-4">
-            {politicas.map(p => (
-              <div key={p.id} id={`pol-${p.id}`} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm scroll-mt-4">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
-                  <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">{p.title}</h3>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{formatDate(p.updatedAt)}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => exportMarkdown(p)} title="Exportar Markdown">
-                      <Download className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>Editar</Button>
-                  </div>
+          <DragDropContext onDragEnd={onDragEnd}>
+            <Droppable droppableId="politicas">
+              {(provided, snapshot) => (
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className={`space-y-4 ${snapshot.isDraggingOver ? 'bg-teal-50/50 rounded-xl p-1' : ''}`}
+                >
+                  {politicas.map((p, index) => (
+                    <Draggable key={p.id} draggableId={p.id} index={index}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          id={`pol-${p.id}`}
+                          className={`bg-white dark:bg-gray-800 border rounded-xl shadow-sm scroll-mt-4 transition-shadow ${
+                            snapshot.isDragging
+                              ? 'border-teal-300 shadow-lg ring-1 ring-teal-200'
+                              : 'border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div
+                                {...provided.dragHandleProps}
+                                className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-300 dark:text-gray-600 hover:text-gray-400 dark:hover:text-gray-400 transition-colors"
+                                title="Arrastar para reordenar"
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <h3 className="font-semibold text-gray-900 dark:text-white">{p.title}</h3>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{formatDate(p.updatedAt)}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <Button variant="ghost" size="icon" onClick={() => exportMarkdown(p)} title="Exportar Markdown">
+                                <Download className="w-4 h-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>Editar</Button>
+                            </div>
+                          </div>
+                          <div className="px-5 py-4">
+                            <MarkdownRenderer content={p.body} />
+                          </div>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
                 </div>
-                <div className="px-5 py-4">
-                  <MarkdownRenderer content={p.body} />
-                </div>
-              </div>
-            ))}
-          </div>
+              )}
+            </Droppable>
+          </DragDropContext>
         </>
       )}
 

@@ -66,20 +66,25 @@ async function readYaml<T>(path: string): Promise<T | null> {
 
 async function writeYaml<T>(path: string, data: T, message: string): Promise<void> {
   const text = yaml.dump(data, { lineWidth: -1 })
-  const sha = shaCache.get(path)
-  try {
-    const res = await writeTextFile(cfg(), path, text, message, sha)
-    shaCache.set(path, res.content.sha)
-  } catch (err: unknown) {
-    // SHA mismatch (409 conflict) — fetch current SHA from GitHub and retry once
-    const msg = err instanceof Error ? err.message : String(err)
-    if (msg.includes('does not match') || msg.includes('409') || msg.includes('conflict')) {
-      const current = await readFile(cfg(), path)
-      shaCache.set(path, current.sha)
-      const res = await writeTextFile(cfg(), path, text, message, current.sha)
+  const MAX_ATTEMPTS = 4
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const sha = shaCache.get(path)
+      const res = await writeTextFile(cfg(), path, text, message, sha)
       shaCache.set(path, res.content.sha)
-    } else {
-      throw err
+      return
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const isConflict = msg.includes('does not match') || msg.includes('409') || msg.includes('conflict')
+      if (isConflict && attempt < MAX_ATTEMPTS - 1) {
+        // Refresh SHA from GitHub and retry
+        const current = await readFile(cfg(), path)
+        shaCache.set(path, current.sha)
+        // Brief back-off to reduce the chance of hitting another concurrent write
+        if (attempt > 0) await new Promise(r => setTimeout(r, 200 * attempt))
+      } else {
+        throw err
+      }
     }
   }
 }

@@ -61,6 +61,7 @@ export interface PautaItem {
   tags: string[]
   attachments: Attachment[]
   mentions: string[]
+  atribuicao?: string
   dueDate?: string
   createdAt: string
   updatedAt: string
@@ -181,6 +182,7 @@ export interface Politica {
   title: string
   body: string
   mentions: string[]
+  order?: number
   createdAt: string
   updatedAt: string
 }
