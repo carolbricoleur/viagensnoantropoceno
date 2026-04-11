@@ -59,12 +59,15 @@ export function Pautas() {
   const [savingItem, setSavingItem] = useState(false)
   const titleInputRef = useRef<HTMLInputElement>(null)
 
-  // @ mention dropdown for quick assignment in title field
+  // @ mention dropdown (shared between title field in dialog and quick-add inline input)
   const [atOpen, setAtOpen] = useState(false)
+  const [atSource, setAtSource] = useState<'dialog' | 'quickadd'>('dialog')
   const [atPos, setAtPos] = useState({ top: 0, left: 0 })
   const [atQuery, setAtQuery] = useState('')
   const [atExternalInput, setAtExternalInput] = useState('')
   const atDropRef = useRef<HTMLDivElement>(null)
+
+  const [quickAtribuicao, setQuickAtribuicao] = useState<string | undefined>(undefined)
 
   const [tagDialog, setTagDialog] = useState(false)
   const [newTagLabel, setNewTagLabel] = useState('')
@@ -141,12 +144,14 @@ export function Pautas() {
       tags: [],
       attachments: [],
       mentions: [],
+      atribuicao: quickAtribuicao,
       createdAt: now,
       updatedAt: now,
     }
     const newData = { ...data, items: [...data.items, newItem] }
     await saveData(newData)
     setQuickAdd('')
+    setQuickAtribuicao(undefined)
     setQuickSectionId(undefined)
   }
 
@@ -477,6 +482,7 @@ export function Pautas() {
     const match = before.match(/@([\w.+-]*)$/)
     if (match) {
       setAtQuery(match[1])
+      setAtSource('dialog')
       const rect = e.target.getBoundingClientRect()
       setAtPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
       setAtOpen(true)
@@ -498,6 +504,40 @@ export function Pautas() {
     setAtQuery('')
     setAtExternalInput('')
     setTimeout(() => titleInputRef.current?.focus(), 0)
+  }
+
+  function handleQuickAddAtChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value
+    setQuickAdd(val)
+    setQuickSectionId(undefined)
+    const caret = e.target.selectionStart ?? val.length
+    const before = val.slice(0, caret)
+    const match = before.match(/@([\w.+-]*)$/)
+    if (match) {
+      setAtQuery(match[1])
+      setAtSource('quickadd')
+      const rect = e.target.getBoundingClientRect()
+      setAtPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
+      setAtOpen(true)
+    } else {
+      setAtOpen(false)
+      setAtQuery('')
+    }
+  }
+
+  function handleQuickAtSelect(email: string) {
+    const el = quickRef.current
+    const caret = el?.selectionStart ?? quickAdd.length
+    const before = quickAdd.slice(0, caret)
+    const atIdx = before.lastIndexOf('@')
+    const after = quickAdd.slice(caret)
+    const newTitle = (quickAdd.slice(0, atIdx) + after).trim()
+    setQuickAdd(newTitle)
+    setQuickAtribuicao(email)
+    setAtOpen(false)
+    setAtQuery('')
+    setAtExternalInput('')
+    setTimeout(() => quickRef.current?.focus(), 0)
   }
 
   function renderItem(item: PautaItem, index: number) {
@@ -621,14 +661,25 @@ export function Pautas() {
         {/* Quick add (unsectioned) */}
         <div className="space-y-2">
           <div className="flex gap-2">
-            <Input
-              ref={quickRef}
-              placeholder="Adicionar item rápido… pressione Enter"
-              value={quickSectionId === undefined ? quickAdd : ''}
-              onChange={e => { setQuickAdd(e.target.value); setQuickSectionId(undefined) }}
-              onKeyDown={e => e.key === 'Enter' && handleQuickAdd(undefined)}
-              className="flex-1"
-            />
+            <div className="flex-1 relative">
+              <Input
+                ref={quickRef}
+                placeholder="Adicionar item rápido… pressione Enter, @ para atribuir"
+                value={quickSectionId === undefined ? quickAdd : ''}
+                onChange={handleQuickAddAtChange}
+                onKeyDown={e => e.key === 'Enter' && handleQuickAdd(undefined)}
+                className="w-full"
+              />
+              {quickAtribuicao && (
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                  <UserChip
+                    email={quickAtribuicao}
+                    isExternal={!(projectMeta?.users ?? []).includes(quickAtribuicao)}
+                    onClear={() => setQuickAtribuicao(undefined)}
+                  />
+                </span>
+              )}
+            </div>
             <Button size="sm" variant="outline" onClick={() => handleQuickAdd(undefined)}>
               <Plus className="w-4 h-4" />
             </Button>
@@ -878,7 +929,7 @@ export function Pautas() {
         </DialogContent>
       </Dialog>
 
-      {/* @ mention dropdown for title assignment */}
+      {/* @ mention dropdown (shared: dialog title + quick-add) */}
       {atOpen && createPortal(
         <div
           ref={atDropRef}
@@ -892,7 +943,7 @@ export function Pautas() {
                 <button
                   key={u}
                   onMouseDown={e => e.preventDefault()}
-                  onClick={() => handleAtSelect(u)}
+                  onClick={() => atSource === 'quickadd' ? handleQuickAtSelect(u) : handleAtSelect(u)}
                   className="w-full px-3 py-1.5 text-xs hover:bg-violet-50 dark:hover:bg-violet-900/30 text-left flex items-center gap-2"
                 >
                   <UserChip email={u} />
@@ -915,7 +966,7 @@ export function Pautas() {
               onKeyDown={e => {
                 if (e.key === 'Enter') {
                   const val = atExternalInput.trim()
-                  if (val) handleAtSelect(val)
+                  if (val) atSource === 'quickadd' ? handleQuickAtSelect(val) : handleAtSelect(val)
                 }
                 if (e.key === 'Escape') setAtOpen(false)
               }}
