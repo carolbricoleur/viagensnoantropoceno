@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
@@ -13,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { MarkdownEditor, MarkdownRenderer } from '@/components/shared/MarkdownEditor'
+import { UserChip, UserPicker } from '@/components/shared/UserPicker'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/useToast'
 import { ToastContainer } from '@/components/ui/toast'
@@ -53,7 +55,16 @@ export function Pautas() {
   const [itemTags, setItemTags] = useState<string[]>([])
   const [itemDueDate, setItemDueDate] = useState('')
   const [itemSectionId, setItemSectionId] = useState<string | undefined>(undefined)
+  const [itemAtribuicao, setItemAtribuicao] = useState<string | undefined>(undefined)
   const [savingItem, setSavingItem] = useState(false)
+  const titleInputRef = useRef<HTMLInputElement>(null)
+
+  // @ mention dropdown for quick assignment in title field
+  const [atOpen, setAtOpen] = useState(false)
+  const [atPos, setAtPos] = useState({ top: 0, left: 0 })
+  const [atQuery, setAtQuery] = useState('')
+  const [atExternalInput, setAtExternalInput] = useState('')
+  const atDropRef = useRef<HTMLDivElement>(null)
 
   const [tagDialog, setTagDialog] = useState(false)
   const [newTagLabel, setNewTagLabel] = useState('')
@@ -80,6 +91,17 @@ export function Pautas() {
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [exportOpen])
+
+  useEffect(() => {
+    if (!atOpen) return
+    function handleClick(e: MouseEvent) {
+      if (atDropRef.current && !atDropRef.current.contains(e.target as Node)) {
+        setAtOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [atOpen])
 
   const { data: pautaData, isLoading } = useQuery({
     queryKey: ['pautas', projectId],
@@ -135,6 +157,7 @@ export function Pautas() {
     setItemTags([])
     setItemDueDate('')
     setItemSectionId(sectionId)
+    setItemAtribuicao(undefined)
     setItemDialog(true)
   }
 
@@ -145,6 +168,7 @@ export function Pautas() {
     setItemTags(item.tags)
     setItemDueDate(item.dueDate ?? '')
     setItemSectionId(item.sectionId)
+    setItemAtribuicao(item.atribuicao)
     setItemDialog(true)
   }
 
@@ -158,7 +182,7 @@ export function Pautas() {
       const added = newMentions.filter(e => !prevMentions.includes(e) && e !== session?.email)
 
       const item: PautaItem = editItem
-        ? { ...editItem, title: itemTitle.trim(), body: itemBody, tags: itemTags, dueDate: itemDueDate || undefined, sectionId: itemSectionId, mentions: newMentions, updatedAt: now }
+        ? { ...editItem, title: itemTitle.trim(), body: itemBody, tags: itemTags, dueDate: itemDueDate || undefined, sectionId: itemSectionId, mentions: newMentions, atribuicao: itemAtribuicao, updatedAt: now }
         : {
           id: generateId(),
           title: itemTitle.trim(),
@@ -168,6 +192,7 @@ export function Pautas() {
           tags: itemTags,
           attachments: [],
           mentions: newMentions,
+          atribuicao: itemAtribuicao,
           dueDate: itemDueDate || undefined,
           createdAt: now,
           updatedAt: now,
@@ -218,6 +243,7 @@ export function Pautas() {
         id: generateId(),
         descricao: item.title,
         body: item.body,
+        atribuicao: item.atribuicao,
         importancia: 'baixa',
         progresso: 'na-fila',
         pautaId: item.id,
@@ -443,6 +469,37 @@ export function Pautas() {
     }
   }
 
+  function handleTitleAtChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value
+    setItemTitle(val)
+    const caret = e.target.selectionStart ?? val.length
+    const before = val.slice(0, caret)
+    const match = before.match(/@([\w.+-]*)$/)
+    if (match) {
+      setAtQuery(match[1])
+      const rect = e.target.getBoundingClientRect()
+      setAtPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
+      setAtOpen(true)
+    } else {
+      setAtOpen(false)
+      setAtQuery('')
+    }
+  }
+
+  function handleAtSelect(email: string) {
+    const caret = titleInputRef.current?.selectionStart ?? itemTitle.length
+    const before = itemTitle.slice(0, caret)
+    const atIdx = before.lastIndexOf('@')
+    const after = itemTitle.slice(caret)
+    const newTitle = (itemTitle.slice(0, atIdx) + after).trim()
+    setItemTitle(newTitle)
+    setItemAtribuicao(email)
+    setAtOpen(false)
+    setAtQuery('')
+    setAtExternalInput('')
+    setTimeout(() => titleInputRef.current?.focus(), 0)
+  }
+
   function renderItem(item: PautaItem, index: number) {
     return (
       <Draggable key={item.id} draggableId={item.id} index={index}>
@@ -474,6 +531,9 @@ export function Pautas() {
                 })}
                 {item.dueDate && (
                   <span className="text-[10px] text-gray-400 dark:text-gray-500">{formatDate(item.dueDate)}</span>
+                )}
+                {item.atribuicao && (
+                  <UserChip email={item.atribuicao} isExternal={!(projectMeta?.users ?? []).includes(item.atribuicao)} />
                 )}
               </div>
             </div>
@@ -700,8 +760,17 @@ export function Pautas() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Título</Label>
-              <Input value={itemTitle} onChange={e => setItemTitle(e.target.value)} autoFocus />
+              <Label>Título <span className="text-[10px] text-gray-400 font-normal">— digite @ para atribuir</span></Label>
+              <Input ref={titleInputRef} value={itemTitle} onChange={handleTitleAtChange} autoFocus />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Atribuição</Label>
+              <UserPicker
+                users={projectMeta?.users ?? []}
+                value={itemAtribuicao}
+                onChange={setItemAtribuicao}
+                placeholder="Ninguém atribuído"
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -808,6 +877,53 @@ export function Pautas() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* @ mention dropdown for title assignment */}
+      {atOpen && createPortal(
+        <div
+          ref={atDropRef}
+          style={{ position: 'absolute', top: atPos.top, left: atPos.left, width: 240, zIndex: 9999 }}
+          className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl"
+        >
+          <div className="max-h-48 overflow-y-auto py-1">
+            {(projectMeta?.users ?? [])
+              .filter(u => !atQuery || u.toLowerCase().includes(atQuery.toLowerCase()))
+              .map(u => (
+                <button
+                  key={u}
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => handleAtSelect(u)}
+                  className="w-full px-3 py-1.5 text-xs hover:bg-violet-50 dark:hover:bg-violet-900/30 text-left flex items-center gap-2"
+                >
+                  <UserChip email={u} />
+                </button>
+              ))
+            }
+            {(projectMeta?.users ?? []).filter(u => !atQuery || u.toLowerCase().includes(atQuery.toLowerCase())).length === 0 && (
+              <p className="px-3 py-2 text-xs text-gray-400">Nenhum usuário encontrado</p>
+            )}
+          </div>
+          <div className="border-t border-gray-100 dark:border-gray-700 px-2 py-1.5">
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1">Usuário externo</p>
+            <input
+              type="email"
+              placeholder="outro@email.com"
+              value={atExternalInput}
+              onChange={e => setAtExternalInput(e.target.value)}
+              className="w-full text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-1 focus:ring-purple-400"
+              onMouseDown={e => e.stopPropagation()}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  const val = atExternalInput.trim()
+                  if (val) handleAtSelect(val)
+                }
+                if (e.key === 'Escape') setAtOpen(false)
+              }}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
 
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </div>

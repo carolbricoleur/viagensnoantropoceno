@@ -61,6 +61,7 @@ export interface PautaItem {
   tags: string[]
   attachments: Attachment[]
   mentions: string[]
+  atribuicao?: string
   dueDate?: string
   createdAt: string
   updatedAt: string
