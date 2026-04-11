@@ -40,6 +40,8 @@ export function Pautas() {
   const { toasts, toast, dismiss } = useToast()
   const navigate = useNavigate()
 
+  const [forwarding, setForwarding] = useState<string | null>(null) // item.id being forwarded
+
   const [quickAdd, setQuickAdd] = useState('')
   const [quickSectionId, setQuickSectionId] = useState<string | undefined>(undefined)
   const quickRef = useRef<HTMLInputElement>(null)
@@ -202,6 +204,8 @@ export function Pautas() {
   }
 
   async function handleForwardToConteudos(item: PautaItem) {
+    if (forwarding) return
+    setForwarding(item.id)
     try {
       const conteudos = await loadConteudos(projectId)
       // Avoid duplicate forwarding
@@ -231,6 +235,8 @@ export function Pautas() {
       navigate('../conteudos')
     } catch (err) {
       toast({ title: 'Erro ao encaminhar', description: String(err), variant: 'destructive' })
+    } finally {
+      setForwarding(null)
     }
   }
 
@@ -473,8 +479,15 @@ export function Pautas() {
             </div>
             <button
               onClick={() => handleForwardToConteudos(item)}
-              className="opacity-0 group-hover:opacity-100 text-gray-300 dark:text-gray-600 hover:text-violet-500 transition-all flex-shrink-0"
-              title="Enviar para Conteúdos"
+              disabled={!!forwarding}
+              className={cn(
+                'opacity-0 group-hover:opacity-100 transition-all flex-shrink-0',
+                forwarding === item.id
+                  ? 'text-violet-400 animate-pulse cursor-wait'
+                  : 'text-gray-300 dark:text-gray-600 hover:text-violet-500',
+                forwarding && forwarding !== item.id && 'pointer-events-none'
+              )}
+              title={forwarding === item.id ? 'Enviando…' : 'Enviar para Conteúdos'}
             >
               <SendHorizonal className="w-3.5 h-3.5" />
             </button>
