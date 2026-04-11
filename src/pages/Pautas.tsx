@@ -221,7 +221,10 @@ export function Pautas() {
         createdAt: now,
         updatedAt: now,
       }
-      await saveConteudos(projectId, { ...conteudos, items: [...conteudos.items, newConteudo] })
+      const updatedConteudos = { ...conteudos, items: [...conteudos.items, newConteudo] }
+      await saveConteudos(projectId, updatedConteudos)
+      // Update React Query cache so Conteúdos page shows new item immediately
+      queryClient.setQueryData(['conteudos', projectId], updatedConteudos)
       // Remove from Pautas
       await handleDeleteItem(item.id)
       toast({ title: 'Pauta enviada para Conteúdos' })

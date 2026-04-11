@@ -175,7 +175,7 @@ function UserPicker({
         ))}
       </div>
       <div className="border-t border-gray-100 dark:border-gray-700 px-2 py-1.5">
-        <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1">Email externo</p>
+        <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1">Usuário externo</p>
         <input
           type="email"
           placeholder="outro@email.com"
@@ -235,11 +235,18 @@ export function Conteudos() {
   const [mdBody, setMdBody] = useState('')
   const [savingMd, setSavingMd] = useState(false)
 
-  // Progresso dropdown
+  // Progresso dropdown (portal-based)
   const [progressoOpen, setProgressoOpen] = useState<string | null>(null)
+  const [progressoPos, setProgressoPos] = useState({ top: 0, left: 0 })
   useEffect(() => {
     if (!progressoOpen) return
-    const handler = () => setProgressoOpen(null)
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node
+      // ignore clicks inside the dropdown portal itself (data-progresso-dropdown)
+      const dropEl = document.querySelector('[data-progresso-dropdown]')
+      if (dropEl && dropEl.contains(target)) return
+      setProgressoOpen(null)
+    }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [progressoOpen])
@@ -553,32 +560,18 @@ export function Conteudos() {
         </td>
 
         {/* Progresso */}
-        <td className="px-3 py-2 relative">
+        <td className="px-3 py-2">
           <button
-            onClick={() => setProgressoOpen(prev => prev === item.id ? null : item.id)}
+            onClick={e => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              setProgressoPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
+              setProgressoOpen(prev => prev === item.id ? null : item.id)
+            }}
             className={cn('text-[11px] px-2 py-0.5 rounded-full font-medium cursor-pointer select-none whitespace-nowrap', PROGRESSO_CLASSES[item.progresso])}
             title="Clique para selecionar o progresso"
           >
             {PROGRESSO_LABELS[item.progresso]} ▾
           </button>
-          {progressoOpen === item.id && (
-            <div className="absolute z-50 mt-1 left-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[200px]">
-              {PROGRESSO_CYCLE.map(p => (
-                <button
-                  key={p}
-                  onClick={() => setProgresso(item, p)}
-                  className={cn(
-                    'w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2',
-                    p === item.progresso && 'font-semibold'
-                  )}
-                >
-                  <span className={cn('w-2 h-2 rounded-full flex-shrink-0', PROGRESSO_CLASSES[p])} />
-                  {PROGRESSO_LABELS[p]}
-                  {p === item.progresso && <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500">atual</span>}
-                </button>
-              ))}
-            </div>
-          )}
         </td>
 
         {/* Criado em */}
@@ -776,6 +769,36 @@ export function Conteudos() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Progresso dropdown portal */}
+      {progressoOpen && (() => {
+        const item = [...activeItems, ...doneItems].find(i => i.id === progressoOpen)
+        if (!item) return null
+        return createPortal(
+          <div
+            data-progresso-dropdown
+            style={{ position: 'absolute', top: progressoPos.top, left: progressoPos.left, zIndex: 9999 }}
+            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 min-w-[200px]"
+          >
+            {PROGRESSO_CYCLE.map(p => (
+              <button
+                key={p}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => setProgresso(item, p)}
+                className={cn(
+                  'w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2',
+                  p === item.progresso && 'font-semibold'
+                )}
+              >
+                <span className={cn('w-2 h-2 rounded-full flex-shrink-0', PROGRESSO_CLASSES[p])} />
+                {PROGRESSO_LABELS[p]}
+                {p === item.progresso && <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500">atual</span>}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )
+      })()}
 
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </div>
