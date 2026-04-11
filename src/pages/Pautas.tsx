@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
-import { Plus, GripVertical, Trash2, Download, Tag, FolderPlus, ChevronDown, ChevronUp, X, SendHorizonal } from 'lucide-react'
+import { Plus, GripVertical, Trash2, Download, Tag, FolderPlus, ChevronDown, ChevronUp, X, SendHorizonal, Pencil, Check } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadPautas, savePautas, loadConteudos, saveConteudos } from '@/lib/storage'
@@ -57,6 +57,9 @@ export function Pautas() {
 
   const [sectionDialog, setSectionDialog] = useState(false)
   const [newSectionTitle, setNewSectionTitle] = useState('')
+
+  const [renamingSection, setRenamingSection] = useState<string | null>(null)
+  const [renameSectionTitle, setRenameSectionTitle] = useState('')
 
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
 
@@ -243,6 +246,22 @@ export function Pautas() {
     await saveData({ ...data, sections: newSections, items: newItems })
   }
 
+  async function handleRenameSection(id: string, newTitle: string) {
+    const trimmed = newTitle.trim()
+    if (!trimmed) { setRenamingSection(null); return }
+    await saveData({ ...data, sections: data.sections.map(s => s.id === id ? { ...s, title: trimmed } : s) })
+    setRenamingSection(null)
+  }
+
+  function toggleCollapse(id: string) {
+    setCollapsedSections(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   async function handleAddTag() {
     if (!newTagLabel.trim()) return
     const tag: PautaTag = { id: generateId(), label: newTagLabel.trim(), color: newTagColor }
@@ -253,7 +272,21 @@ export function Pautas() {
 
   function onDragEnd(result: DropResult) {
     if (!result.destination) return
-    const { source, destination, draggableId } = result
+    const { source, destination, draggableId, type } = result
+
+    // Handle section reordering
+    if (type === 'SECTION') {
+      const ordered = [...data.sections].sort((a, b) => a.order - b.order)
+      const [moved] = ordered.splice(source.index, 1)
+      ordered.splice(destination.index, 0, moved)
+      const reordered = ordered.map((s, i) => ({ ...s, order: i }))
+      const newData = { ...data, sections: reordered }
+      queryClient.setQueryData(['pautas', projectId], newData)
+      savePautas(projectId, newData).catch(() =>
+        toast({ title: 'Erro ao reordenar seções', variant: 'destructive' })
+      )
+      return
+    }
 
     const item = data.items.find(i => i.id === draggableId)
     if (!item) return
@@ -537,62 +570,107 @@ export function Pautas() {
         </div>
 
         {/* Sections */}
-        {sortedSections.map(section => {
-          const items = bySectionId.get(section.id) ?? []
-          const isCollapsed = collapsedSections.has(section.id)
-          return (
-            <div key={section.id} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-700">
-                <button
-                  onClick={() => setCollapsedSections(prev => {
-                    const next = new Set(prev)
-                    if (next.has(section.id)) next.delete(section.id)
-                    else next.add(section.id)
-                    return next
-                  })}
-                  className="flex-1 flex items-center gap-2 text-left"
-                >
-                  {isCollapsed ? <ChevronDown className="w-4 h-4 text-gray-400 dark:text-gray-500" /> : <ChevronUp className="w-4 h-4 text-gray-400 dark:text-gray-500" />}
-                  <span className="font-semibold text-sm text-gray-700 dark:text-gray-200">{section.title}</span>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{items.length}</Badge>
-                </button>
-                <button
-                  onClick={() => openNewItem(section.id)}
-                  className="p-1 text-gray-400 hover:text-purple-600 transition-colors"
-                  title="Adicionar item nesta seção"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDeleteSection(section.id)}
-                  className="p-1 text-gray-300 hover:text-red-400 transition-colors"
-                  title="Excluir seção"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-              {!isCollapsed && (
-                <div className="p-3 space-y-2">
-                  <Droppable droppableId={section.id}>
+        <Droppable droppableId="sections" type="SECTION">
+          {(sectionsProvided) => (
+            <div ref={sectionsProvided.innerRef} {...sectionsProvided.droppableProps} className="space-y-4">
+              {sortedSections.map((section, idx) => {
+                const items = bySectionId.get(section.id) ?? []
+                const isCollapsed = collapsedSections.has(section.id)
+                const isRenaming = renamingSection === section.id
+                return (
+                  <Draggable key={section.id} draggableId={`sec-${section.id}`} index={idx}>
                     {(provided, snapshot) => (
                       <div
                         ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className={cn('space-y-2 min-h-[40px] rounded-lg transition-colors', snapshot.isDraggingOver && 'bg-purple-50')}
+                        {...provided.draggableProps}
+                        className={cn(
+                          'border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden',
+                          snapshot.isDragging && 'shadow-lg ring-1 ring-purple-300 dark:ring-purple-700'
+                        )}
                       >
-                        {items.map((item, i) => renderItem(item, i))}
-                        {provided.placeholder}
-                        {items.length === 0 && !snapshot.isDraggingOver && (
-                          <p className="text-xs text-gray-300 dark:text-gray-600 text-center py-3 italic">Seção vazia — arraste itens aqui</p>
+                        <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-700">
+                          {/* Drag handle */}
+                          <div
+                            {...provided.dragHandleProps}
+                            className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-300 dark:text-gray-600 hover:text-gray-400 dark:hover:text-gray-400 transition-colors"
+                          >
+                            <GripVertical className="w-4 h-4" />
+                          </div>
+
+                          {/* Title: input quando renomeando, botão de colapso otherwise */}
+                          {isRenaming ? (
+                            <div className="flex-1 flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                              <input
+                                autoFocus
+                                className="flex-1 text-sm font-semibold bg-transparent border-b border-purple-400 outline-none text-gray-700 dark:text-gray-200"
+                                value={renameSectionTitle}
+                                onChange={e => setRenameSectionTitle(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleRenameSection(section.id, renameSectionTitle)
+                                  if (e.key === 'Escape') setRenamingSection(null)
+                                }}
+                                onBlur={() => handleRenameSection(section.id, renameSectionTitle)}
+                              />
+                              <button onClick={() => handleRenameSection(section.id, renameSectionTitle)} className="p-1 text-green-500 hover:text-green-700 transition-colors" title="Confirmar">
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => setRenamingSection(null)} className="p-1 text-gray-400 hover:text-gray-600 transition-colors" title="Cancelar">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => toggleCollapse(section.id)} className="flex-1 flex items-center gap-2 text-left">
+                              {isCollapsed ? <ChevronDown className="w-4 h-4 text-gray-400 dark:text-gray-500" /> : <ChevronUp className="w-4 h-4 text-gray-400 dark:text-gray-500" />}
+                              <span className="font-semibold text-sm text-gray-700 dark:text-gray-200">{section.title}</span>
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{items.length}</Badge>
+                            </button>
+                          )}
+
+                          {!isRenaming && (
+                            <button
+                              onClick={() => { setRenamingSection(section.id); setRenameSectionTitle(section.title) }}
+                              className="p-1 text-gray-300 dark:text-gray-600 hover:text-purple-500 dark:hover:text-purple-400 transition-colors"
+                              title="Renomear seção"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button onClick={() => openNewItem(section.id)} className="p-1 text-gray-400 hover:text-purple-600 transition-colors" title="Adicionar item nesta seção">
+                            <Plus className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleDeleteSection(section.id)} className="p-1 text-gray-300 dark:text-gray-600 hover:text-red-400 transition-colors" title="Excluir seção">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {!isCollapsed && (
+                          <div className="p-3 space-y-2">
+                            <Droppable droppableId={section.id}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.droppableProps}
+                                  className={cn('space-y-2 min-h-[40px] rounded-lg transition-colors', snapshot.isDraggingOver && 'bg-purple-50 dark:bg-purple-950/20')}
+                                >
+                                  {items.map((item, i) => renderItem(item, i))}
+                                  {provided.placeholder}
+                                  {items.length === 0 && !snapshot.isDraggingOver && (
+                                    <p className="text-xs text-gray-300 dark:text-gray-600 text-center py-3 italic">Seção vazia — arraste itens aqui</p>
+                                  )}
+                                </div>
+                              )}
+                            </Droppable>
+                          </div>
                         )}
                       </div>
                     )}
-                  </Droppable>
-                </div>
-              )}
+                  </Draggable>
+                )
+              })}
+              {sectionsProvided.placeholder}
             </div>
-          )
-        })}
+          )}
+        </Droppable>
       </DragDropContext>
 
       {/* Item dialog */}
