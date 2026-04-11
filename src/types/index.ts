@@ -182,6 +182,7 @@ export interface Politica {
   title: string
   body: string
   mentions: string[]
+  order?: number
   createdAt: string
   updatedAt: string
 }
