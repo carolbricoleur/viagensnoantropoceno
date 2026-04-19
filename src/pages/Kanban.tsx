@@ -5,7 +5,7 @@ import {
   Plus, ChevronRight, ChevronLeft, ZoomIn, ZoomOut,
   History, ExternalLink, X, Download, Share2, User, UserCheck,
   Calendar, CalendarCheck, ChevronDown, ChevronUp, Pencil, Paperclip, ImagePlus, Trash2,
-  FileText, FileType2, FolderArchive,
+  FileText, FileType2, FolderArchive, BadgeCheck,
 } from 'lucide-react'
 import { format, eachMonthOfInterval, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, isValid } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -141,16 +141,24 @@ function KanbanCardView({
   onQuickAttach,
   onDownloadCard,
   projectUsers = [],
+  onInlineSave,
+  onMarkRevisado,
 }: {
   card: KanbanCard
   onEdit: () => void
   onQuickAttach: (files: FileList) => void
   onDownloadCard: (fmt: 'md' | 'docx' | 'zip') => void
   projectUsers?: string[]
+  onInlineSave?: (patch: Partial<KanbanCard>) => void
+  onMarkRevisado?: () => void
 }) {
   const [showLog, setShowLog] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [dlOpen, setDlOpen] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleVal, setTitleVal] = useState(card.title)
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [descVal, setDescVal] = useState(card.description)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dlRef = useRef<HTMLDivElement>(null)
 
@@ -184,9 +192,53 @@ function KanbanCardView({
     >
       <div className="flex items-start gap-1">
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-900 dark:text-white text-sm leading-snug mb-0.5">{card.title}</p>
+          {editingTitle ? (
+            <input
+              autoFocus
+              value={titleVal}
+              onChange={e => setTitleVal(e.target.value)}
+              onMouseDown={e => e.stopPropagation()}
+              onBlur={() => {
+                setEditingTitle(false)
+                if (titleVal.trim() && titleVal.trim() !== card.title) onInlineSave?.({ title: titleVal.trim() })
+                else setTitleVal(card.title)
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.currentTarget.blur() }
+                if (e.key === 'Escape') { setTitleVal(card.title); setEditingTitle(false) }
+              }}
+              className="w-full font-semibold text-gray-900 dark:text-white text-sm leading-snug bg-transparent border-b border-violet-400 outline-none py-0.5 mb-0.5"
+            />
+          ) : (
+            <p
+              className="font-semibold text-gray-900 dark:text-white text-sm leading-snug mb-0.5 cursor-text"
+              onDoubleClick={e => { e.stopPropagation(); setEditingTitle(true); setTitleVal(card.title) }}
+              title="Clique duplo para editar"
+            >
+              {card.title}
+            </p>
+          )}
           {isPendente && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 font-medium">PENDENTE</span>
+          )}
+          {card.column === 'revisao-aprovacao' && (
+            <div className="mt-1">
+              {card.revisado ? (
+                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium">
+                  <BadgeCheck className="w-3 h-3" />
+                  Revisado
+                </span>
+              ) : (
+                <button
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => { e.stopPropagation(); onMarkRevisado?.() }}
+                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-green-400 hover:text-green-600 transition-colors cursor-pointer"
+                >
+                  <BadgeCheck className="w-3 h-3" />
+                  Marcar como revisado
+                </button>
+              )}
+            </div>
           )}
         </div>
         {/* Download dropdown */}
@@ -225,8 +277,30 @@ function KanbanCardView({
           <Pencil className="w-3.5 h-3.5" />
         </button>
       </div>
-      {card.description && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2 mt-1">{card.description.slice(0, 100)}</p>
+      {editingDesc ? (
+        <textarea
+          autoFocus
+          value={descVal}
+          onChange={e => setDescVal(e.target.value)}
+          onMouseDown={e => e.stopPropagation()}
+          onBlur={() => {
+            setEditingDesc(false)
+            if (descVal !== card.description) onInlineSave?.({ description: descVal })
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Escape') { setDescVal(card.description); setEditingDesc(false) }
+          }}
+          rows={3}
+          className="w-full text-xs text-gray-500 dark:text-gray-400 bg-transparent border border-violet-300 rounded px-2 py-1 outline-none resize-none mb-2 mt-1"
+        />
+      ) : (
+        <p
+          className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2 mt-1 cursor-text min-h-[1rem]"
+          onDoubleClick={e => { e.stopPropagation(); setEditingDesc(true); setDescVal(card.description) }}
+          title="Clique duplo para editar"
+        >
+          {card.description || <span className="italic text-gray-300 dark:text-gray-600">Sem descrição</span>}
+        </p>
       )}
 
       <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -682,6 +756,56 @@ export function Kanban() {
     }
   }
 
+  // ─── Inline save ─────────────────────────────────────────────────────────
+
+  async function handleInlineSave(card: KanbanCard, patch: Partial<KanbanCard>) {
+    const updated = appendLog(
+      { ...card, ...patch, updatedAt: new Date().toISOString() },
+      `Editado inline: ${Object.keys(patch).join(', ')}`,
+      session!.email
+    )
+    await saveKanbanCard(projectId, updated)
+    queryClient.setQueryData(['kanban', projectId], (prev: KanbanCard[] = []) =>
+      prev.map(c => c.id === updated.id ? updated : c)
+    )
+  }
+
+  async function handleMarkRevisado(card: KanbanCard) {
+    const now = new Date().toISOString()
+    const wasRevisado = !!card.revisado
+    const updated = appendLog(
+      {
+        ...card,
+        revisado: !wasRevisado,
+        revisadoAt: !wasRevisado ? now : undefined,
+        revisadoBy: !wasRevisado ? session!.email : undefined,
+        updatedAt: now,
+      },
+      !wasRevisado ? 'Revisão concluída — conteúdo aprovado' : 'Revisão desmarcada',
+      session!.email
+    )
+    await saveKanbanCard(projectId, updated)
+    queryClient.setQueryData(['kanban', projectId], (prev: KanbanCard[] = []) =>
+      prev.map(c => c.id === updated.id ? updated : c)
+    )
+    // Notify assignee (author) only when marking as reviewed
+    if (!wasRevisado && card.assignee && card.assignee !== session?.email) {
+      try {
+        await sendMentionNotification({
+          mentionerEmail: session!.email,
+          mentionedEmail: card.assignee,
+          projectName: projectMeta?.name ?? projectId,
+          moduleName: 'Kanban',
+          excerpt: `A revisão do conteúdo "${card.title}" foi concluída. O conteúdo está aprovado e pronto para avançar.`,
+        })
+      } catch { /* notification failure should not block */ }
+    }
+    toast({
+      title: !wasRevisado ? 'Revisão concluída' : 'Revisão desmarcada',
+      description: !wasRevisado && card.assignee ? `${card.assignee.split('@')[0]} foi notificado` : undefined,
+    })
+  }
+
   // ─── Per-card export ──────────────────────────────────────────────────────
 
   function cardToMarkdown(card: KanbanCard): string {
@@ -1085,6 +1209,8 @@ export function Kanban() {
                                         handleQuickAttach(card, files)
                                       }}
                                       onDownloadCard={fmt => handleDownloadCard(card, fmt)}
+                                      onInlineSave={patch => handleInlineSave(card, patch)}
+                                      onMarkRevisado={() => handleMarkRevisado(card)}
                                     />
                                   </div>
                                 )}

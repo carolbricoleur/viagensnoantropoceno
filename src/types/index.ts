@@ -95,6 +95,7 @@ export interface ConteudoItem {
   id: string
   descricao: string
   body?: string                // Markdown body (from editor)
+  attachments?: Attachment[]
   atribuicao?: string          // email do usuário atribuído
   prazo?: string               // ISO date
   tipo?: string                // Artigo, Resenha, etc.
@@ -148,6 +149,9 @@ export interface KanbanCard {
   mentions: string[]
   pautaId?: string
   conteudoId?: string          // ID do ConteudoItem de origem
+  revisado?: boolean
+  revisadoAt?: string
+  revisadoBy?: string
   createdAt: string
   updatedAt: string
 }
