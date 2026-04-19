@@ -272,13 +272,11 @@ export function Conteudos() {
     if (!mdDialogItem) return
     setSavingMd(true)
     try {
-      const prevMentions = mdDialogItem.mentions ?? []
       const newMentions = extractMentions(mdBody)
-      const added = newMentions.filter(e => !prevMentions.includes(e) && e !== session?.email)
-      // Debug: always show what was found
-      toast({ title: `Debug menções: ${newMentions.length} no texto, ${added.length} novas`, description: newMentions.join(', ') || '(nenhuma)' })
+      // Always notify all @mentions in body on every save
+      const toNotify = newMentions.filter(e => e !== session?.email)
       await updateField(mdDialogItem, { body: mdBody, attachments: mdAttachments, mentions: newMentions })
-      for (const email of added) {
+      for (const email of toNotify) {
         try {
           await sendMentionNotification({
             mentionerEmail: session!.email,
@@ -287,16 +285,12 @@ export function Conteudos() {
             moduleName: 'Conteúdos',
             excerpt: mdBody.slice(0, 200),
           })
-          toast({ title: `Notificação enviada`, description: `@ ${email}` })
+          toast({ title: 'Notificação enviada', description: email })
         } catch (notifyErr) {
           toast({ title: `Falha ao notificar ${email}`, description: String(notifyErr), variant: 'destructive' })
         }
       }
-      if (added.length === 0 && newMentions.length > 0) {
-        toast({ title: 'Texto salvo', description: `${newMentions.length} menção(ões) já notificada(s) anteriormente` })
-      } else if (added.length === 0) {
-        toast({ title: 'Texto salvo' })
-      }
+      toast({ title: 'Texto salvo' })
       setMdDialogItem(null)
     } catch (err) {
       toast({ title: 'Erro', description: String(err), variant: 'destructive' })

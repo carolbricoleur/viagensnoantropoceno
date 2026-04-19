@@ -575,12 +575,9 @@ export function Kanban() {
     setSaving(true)
     try {
       const now = new Date().toISOString()
-      const prevMentions = editCard?.mentions ?? []
       const newMentions = extractMentions(cardDesc)
-      const added = newMentions.filter(e => !prevMentions.includes(e) && e !== session?.email)
-
-      // Debug: always show what was found in the description
-      toast({ title: `Debug menções: ${newMentions.length} no texto, ${added.length} novas`, description: newMentions.join(', ') || '(nenhuma)' })
+      // Always notify all @mentions in body (every save), plus assignee/reviewer if newly set
+      const toNotify = new Set(newMentions.filter(e => e !== session?.email))
 
       const platforms = cardCustomPlatform.trim()
         ? [...new Set([...cardPlatforms, cardCustomPlatform.trim()])]
@@ -588,11 +585,11 @@ export function Kanban() {
 
       // Notify assignee if newly set — skip only self-assignment
       if (cardAssignee && cardAssignee !== editCard?.assignee && cardAssignee !== session?.email) {
-        added.push(cardAssignee)
+        toNotify.add(cardAssignee)
       }
       // Notify reviewer if newly set — skip only self-assignment
       if (cardReviewer && cardReviewer !== editCard?.reviewer && cardReviewer !== session?.email) {
-        added.push(cardReviewer)
+        toNotify.add(cardReviewer)
       }
 
       let card: KanbanCard
@@ -647,7 +644,7 @@ export function Kanban() {
         queryClient.setQueryData(['kanban', projectId], (prev: KanbanCard[] = []) => [...prev, card])
       }
 
-      for (const email of added) {
+      for (const email of toNotify) {
         try {
           await sendMentionNotification({
             mentionerEmail: session!.email,
@@ -656,13 +653,10 @@ export function Kanban() {
             moduleName: 'Kanban',
             excerpt: cardDesc.slice(0, 200),
           })
-          toast({ title: 'Notificação enviada', description: `@ ${email}` })
+          toast({ title: 'Notificação enviada', description: email })
         } catch (notifyErr) {
           toast({ title: `Falha ao notificar ${email}`, description: String(notifyErr), variant: 'destructive' })
         }
-      }
-      if (added.length === 0 && newMentions.length > 0) {
-        toast({ title: editCard ? 'Card atualizado' : 'Card criado', description: `${newMentions.length} menção(ões) já notificada(s)` })
       }
 
       // Immediate transfer: if card is in agendamento and scheduledAt <= today, move to publicacao now
@@ -773,12 +767,12 @@ export function Kanban() {
   // ─── Inline save ─────────────────────────────────────────────────────────
 
   async function handleInlineSave(card: KanbanCard, patch: Partial<KanbanCard>) {
-    // Extract new @mentions from description if it changed
-    const prevMentions = card.mentions ?? []
+    // Extract @mentions from description if it changed
     const newDesc = patch.description ?? card.description
     const newMentions = extractMentions(newDesc)
+    // Always notify all @mentions when description changes
     const addedMentions = newDesc !== card.description
-      ? newMentions.filter(e => !prevMentions.includes(e) && e !== session?.email)
+      ? newMentions.filter(e => e !== session?.email)
       : []
     const patchWithMentions = patch.description !== undefined
       ? { ...patch, mentions: newMentions }
