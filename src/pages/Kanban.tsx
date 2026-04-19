@@ -576,27 +576,21 @@ export function Kanban() {
     try {
       const now = new Date().toISOString()
       const newMentions = extractMentions(cardDesc)
-      // Always notify all @mentions in body (every save), plus assignee/reviewer if newly set
-      const toNotify = new Set(newMentions.filter(e => e !== session?.email))
+      // Always notify all @mentions in body on every save
+      const toNotify = new Set(newMentions)
 
       const platforms = cardCustomPlatform.trim()
         ? [...new Set([...cardPlatforms, cardCustomPlatform.trim()])]
         : cardPlatforms
 
-      // Notify assignee if newly set — skip only self-assignment
-      if (cardAssignee && cardAssignee !== editCard?.assignee && cardAssignee !== session?.email) {
+      // Notify assignee if newly set
+      if (cardAssignee && cardAssignee !== editCard?.assignee) {
         toNotify.add(cardAssignee)
       }
-      // Notify reviewer if newly set — skip only self-assignment
-      if (cardReviewer && cardReviewer !== editCard?.reviewer && cardReviewer !== session?.email) {
+      // Notify reviewer if newly set
+      if (cardReviewer && cardReviewer !== editCard?.reviewer) {
         toNotify.add(cardReviewer)
       }
-
-      // DEBUG — remove after diagnosis
-      toast({
-        title: `Debug: ${toNotify.size} a notificar`,
-        description: `texto="${cardDesc.slice(0, 30)}" | assignee="${cardAssignee}" | prevAssignee="${editCard?.assignee ?? ''}"`,
-      })
 
       let card: KanbanCard
       if (editCard) {
@@ -777,9 +771,7 @@ export function Kanban() {
     const newDesc = patch.description ?? card.description
     const newMentions = extractMentions(newDesc)
     // Always notify all @mentions when description changes
-    const addedMentions = newDesc !== card.description
-      ? newMentions.filter(e => e !== session?.email)
-      : []
+    const addedMentions = newDesc !== card.description ? newMentions : []
     const patchWithMentions = patch.description !== undefined
       ? { ...patch, mentions: newMentions }
       : patch
@@ -809,7 +801,7 @@ export function Kanban() {
       }
     }
     // Notify newly assigned user
-    if (patch.assignee && patch.assignee !== card.assignee && patch.assignee !== session?.email) {
+    if (patch.assignee && patch.assignee !== card.assignee) {
       try {
         await sendMentionNotification({
           mentionerEmail: session!.email,
@@ -841,7 +833,7 @@ export function Kanban() {
       prev.map(c => c.id === updated.id ? updated : c)
     )
     // Notify assignee (author) only when marking as reviewed
-    if (!wasRevisado && card.assignee && card.assignee !== session?.email) {
+    if (!wasRevisado && card.assignee) {
       try {
         await sendMentionNotification({
           mentionerEmail: session!.email,

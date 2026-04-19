@@ -217,7 +217,7 @@ export function Conteudos() {
     const updated: ConteudoItem = { ...item, ...patch, updatedAt: new Date().toISOString() }
     await saveData({ ...data, items: data.items.map(i => i.id === item.id ? updated : i) })
     // Notify any assigned email (internal or external) — skip only self-assignment
-    if (notifyEmail && notifyEmail !== session?.email) {
+    if (notifyEmail) {
       await sendMentionNotification({
         mentionerEmail: session!.email,
         mentionedEmail: notifyEmail,
@@ -274,7 +274,7 @@ export function Conteudos() {
     try {
       const newMentions = extractMentions(mdBody)
       // Always notify all @mentions in body on every save
-      const toNotify = newMentions.filter(e => e !== session?.email)
+      const toNotify = newMentions
       await updateField(mdDialogItem, { body: mdBody, attachments: mdAttachments, mentions: newMentions })
       for (const email of toNotify) {
         try {

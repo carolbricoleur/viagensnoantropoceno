@@ -184,7 +184,7 @@ export function Pautas() {
       const now = new Date().toISOString()
       const prevMentions = editItem?.mentions ?? []
       const newMentions = extractMentions(itemBody)
-      const added = newMentions.filter(e => !prevMentions.includes(e) && e !== session?.email)
+      const added = newMentions.filter(e => !prevMentions.includes(e))
 
       const item: PautaItem = editItem
         ? { ...editItem, title: itemTitle.trim(), body: itemBody, tags: itemTags, dueDate: itemDueDate || undefined, sectionId: itemSectionId, mentions: newMentions, atribuicao: itemAtribuicao, updatedAt: now }
@@ -263,7 +263,7 @@ export function Pautas() {
       // Remove from Pautas
       await handleDeleteItem(item.id)
       // Notify assigned user (if any) that a task was assigned to them in Conteúdos
-      if (item.atribuicao && item.atribuicao !== session?.email) {
+      if (item.atribuicao) {
         try {
           await sendMentionNotification({
             mentionerEmail: session!.email,
