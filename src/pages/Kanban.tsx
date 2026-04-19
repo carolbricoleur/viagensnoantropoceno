@@ -758,8 +758,19 @@ export function Kanban() {
   // ─── Inline save ─────────────────────────────────────────────────────────
 
   async function handleInlineSave(card: KanbanCard, patch: Partial<KanbanCard>) {
+    // Extract new @mentions from description if it changed
+    const prevMentions = card.mentions ?? []
+    const newDesc = patch.description ?? card.description
+    const newMentions = extractMentions(newDesc)
+    const addedMentions = newDesc !== card.description
+      ? newMentions.filter(e => !prevMentions.includes(e) && e !== session?.email)
+      : []
+    const patchWithMentions = patch.description !== undefined
+      ? { ...patch, mentions: newMentions }
+      : patch
+
     const updated = appendLog(
-      { ...card, ...patch, updatedAt: new Date().toISOString() },
+      { ...card, ...patchWithMentions, updatedAt: new Date().toISOString() },
       `Editado inline: ${Object.keys(patch).join(', ')}`,
       session!.email
     )
@@ -767,7 +778,19 @@ export function Kanban() {
     queryClient.setQueryData(['kanban', projectId], (prev: KanbanCard[] = []) =>
       prev.map(c => c.id === updated.id ? updated : c)
     )
-    // Notify newly assigned user (inline title/desc edits don't assign, but guard for future use)
+    // Notify new @mentions in description
+    for (const email of addedMentions) {
+      try {
+        await sendMentionNotification({
+          mentionerEmail: session!.email,
+          mentionedEmail: email,
+          projectName: projectMeta?.name ?? projectId,
+          moduleName: 'Kanban',
+          excerpt: newDesc.slice(0, 200),
+        })
+      } catch { /* notification failure should not block inline save */ }
+    }
+    // Notify newly assigned user
     if (patch.assignee && patch.assignee !== card.assignee && patch.assignee !== session?.email) {
       try {
         await sendMentionNotification({

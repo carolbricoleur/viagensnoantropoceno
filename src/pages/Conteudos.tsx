@@ -9,7 +9,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadConteudos, saveConteudos, saveKanbanCard, deleteKanbanCard, uploadConteudoAttachment } from '@/lib/storage'
 import { sendMentionNotification } from '@/lib/emailjs'
-import { generateId, formatDate } from '@/lib/utils'
+import { generateId, formatDate, extractMentions } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -272,7 +272,19 @@ export function Conteudos() {
     if (!mdDialogItem) return
     setSavingMd(true)
     try {
-      await updateField(mdDialogItem, { body: mdBody, attachments: mdAttachments })
+      const prevMentions = mdDialogItem.mentions ?? []
+      const newMentions = extractMentions(mdBody)
+      const added = newMentions.filter(e => !prevMentions.includes(e) && e !== session?.email)
+      await updateField(mdDialogItem, { body: mdBody, attachments: mdAttachments, mentions: newMentions })
+      for (const email of added) {
+        await sendMentionNotification({
+          mentionerEmail: session!.email,
+          mentionedEmail: email,
+          projectName: projectMeta?.name ?? projectId,
+          moduleName: 'Conteúdos',
+          excerpt: mdBody.slice(0, 200),
+        })
+      }
       setMdDialogItem(null)
       toast({ title: 'Texto salvo' })
     } catch (err) {

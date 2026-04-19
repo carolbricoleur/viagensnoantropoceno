@@ -104,6 +104,7 @@ export interface ConteudoItem {
   progresso: ConteudoProgresso
   pautaId?: string             // ID da PautaItem de origem
   kanbanCardId?: string        // ID do KanbanCard criado quando Pronto
+  mentions?: string[]          // emails mencionados no body via @
   order: number
   createdAt: string
   updatedAt: string
