@@ -275,6 +275,8 @@ export function Conteudos() {
       const prevMentions = mdDialogItem.mentions ?? []
       const newMentions = extractMentions(mdBody)
       const added = newMentions.filter(e => !prevMentions.includes(e) && e !== session?.email)
+      // Debug: always show what was found
+      toast({ title: `Debug menções: ${newMentions.length} no texto, ${added.length} novas`, description: newMentions.join(', ') || '(nenhuma)' })
       await updateField(mdDialogItem, { body: mdBody, attachments: mdAttachments, mentions: newMentions })
       for (const email of added) {
         try {

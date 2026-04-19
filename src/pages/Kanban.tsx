@@ -579,11 +579,18 @@ export function Kanban() {
       const newMentions = extractMentions(cardDesc)
       const added = newMentions.filter(e => !prevMentions.includes(e) && e !== session?.email)
 
+      // Debug: always show what was found in the description
+      toast({ title: `Debug menções: ${newMentions.length} no texto, ${added.length} novas`, description: newMentions.join(', ') || '(nenhuma)' })
+
       const platforms = cardCustomPlatform.trim()
         ? [...new Set([...cardPlatforms, cardCustomPlatform.trim()])]
         : cardPlatforms
 
-      // Notify reviewer if newly set (internal or external) — skip only self-assignment
+      // Notify assignee if newly set — skip only self-assignment
+      if (cardAssignee && cardAssignee !== editCard?.assignee && cardAssignee !== session?.email) {
+        added.push(cardAssignee)
+      }
+      // Notify reviewer if newly set — skip only self-assignment
       if (cardReviewer && cardReviewer !== editCard?.reviewer && cardReviewer !== session?.email) {
         added.push(cardReviewer)
       }
