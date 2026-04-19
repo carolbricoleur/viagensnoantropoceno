@@ -641,13 +641,21 @@ export function Kanban() {
       }
 
       for (const email of added) {
-        await sendMentionNotification({
-          mentionerEmail: session!.email,
-          mentionedEmail: email,
-          projectName: projectMeta?.name ?? projectId,
-          moduleName: 'Kanban',
-          excerpt: cardDesc.slice(0, 200),
-        })
+        try {
+          await sendMentionNotification({
+            mentionerEmail: session!.email,
+            mentionedEmail: email,
+            projectName: projectMeta?.name ?? projectId,
+            moduleName: 'Kanban',
+            excerpt: cardDesc.slice(0, 200),
+          })
+          toast({ title: 'Notificação enviada', description: `@ ${email}` })
+        } catch (notifyErr) {
+          toast({ title: `Falha ao notificar ${email}`, description: String(notifyErr), variant: 'destructive' })
+        }
+      }
+      if (added.length === 0 && newMentions.length > 0) {
+        toast({ title: editCard ? 'Card atualizado' : 'Card criado', description: `${newMentions.length} menção(ões) já notificada(s)` })
       }
 
       // Immediate transfer: if card is in agendamento and scheduledAt <= today, move to publicacao now
@@ -788,7 +796,10 @@ export function Kanban() {
           moduleName: 'Kanban',
           excerpt: newDesc.slice(0, 200),
         })
-      } catch { /* notification failure should not block inline save */ }
+        toast({ title: 'Notificação enviada', description: `@ ${email}` })
+      } catch (notifyErr) {
+        toast({ title: `Falha ao notificar ${email}`, description: String(notifyErr), variant: 'destructive' })
+      }
     }
     // Notify newly assigned user
     if (patch.assignee && patch.assignee !== card.assignee && patch.assignee !== session?.email) {
