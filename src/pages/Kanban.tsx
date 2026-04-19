@@ -583,9 +583,8 @@ export function Kanban() {
         ? [...new Set([...cardPlatforms, cardCustomPlatform.trim()])]
         : cardPlatforms
 
-      // Notify reviewer if newly set and is a project member
-      if (cardReviewer && cardReviewer !== editCard?.reviewer && cardReviewer !== session?.email
-          && projectMeta?.users.includes(cardReviewer)) {
+      // Notify reviewer if newly set (internal or external) — skip only self-assignment
+      if (cardReviewer && cardReviewer !== editCard?.reviewer && cardReviewer !== session?.email) {
         added.push(cardReviewer)
       }
 
@@ -768,6 +767,18 @@ export function Kanban() {
     queryClient.setQueryData(['kanban', projectId], (prev: KanbanCard[] = []) =>
       prev.map(c => c.id === updated.id ? updated : c)
     )
+    // Notify newly assigned user (inline title/desc edits don't assign, but guard for future use)
+    if (patch.assignee && patch.assignee !== card.assignee && patch.assignee !== session?.email) {
+      try {
+        await sendMentionNotification({
+          mentionerEmail: session!.email,
+          mentionedEmail: patch.assignee,
+          projectName: projectMeta?.name ?? projectId,
+          moduleName: 'Kanban',
+          excerpt: `Você foi atribuído ao card "${updated.title}".`,
+        })
+      } catch { /* notification failure should not block inline save */ }
+    }
   }
 
   async function handleMarkRevisado(card: KanbanCard) {

@@ -262,6 +262,18 @@ export function Pautas() {
       queryClient.setQueryData(['conteudos', projectId], updatedConteudos)
       // Remove from Pautas
       await handleDeleteItem(item.id)
+      // Notify assigned user (if any) that a task was assigned to them in Conteúdos
+      if (item.atribuicao && item.atribuicao !== session?.email) {
+        try {
+          await sendMentionNotification({
+            mentionerEmail: session!.email,
+            mentionedEmail: item.atribuicao,
+            projectName: projectMeta?.name ?? projectId,
+            moduleName: 'Conteúdos',
+            excerpt: `Você foi atribuído ao conteúdo "${item.title}" (encaminhado de Pautas).`,
+          })
+        } catch { /* notification failure should not block forwarding */ }
+      }
       toast({ title: 'Pauta enviada para Conteúdos' })
       navigate('../conteudos')
     } catch (err) {

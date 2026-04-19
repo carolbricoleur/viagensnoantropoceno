@@ -216,7 +216,8 @@ export function Conteudos() {
   async function updateField(item: ConteudoItem, patch: Partial<ConteudoItem>, notifyEmail?: string) {
     const updated: ConteudoItem = { ...item, ...patch, updatedAt: new Date().toISOString() }
     await saveData({ ...data, items: data.items.map(i => i.id === item.id ? updated : i) })
-    if (notifyEmail && notifyEmail !== session?.email && users.includes(notifyEmail)) {
+    // Notify any assigned email (internal or external) — skip only self-assignment
+    if (notifyEmail && notifyEmail !== session?.email) {
       await sendMentionNotification({
         mentionerEmail: session!.email,
         mentionedEmail: notifyEmail,
