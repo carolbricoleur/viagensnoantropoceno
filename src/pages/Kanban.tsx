@@ -592,6 +592,12 @@ export function Kanban() {
         toNotify.add(cardReviewer)
       }
 
+      // DEBUG — remove after diagnosis
+      toast({
+        title: `Debug: ${toNotify.size} a notificar`,
+        description: `texto="${cardDesc.slice(0, 30)}" | assignee="${cardAssignee}" | prevAssignee="${editCard?.assignee ?? ''}"`,
+      })
+
       let card: KanbanCard
       if (editCard) {
         card = appendLog(
