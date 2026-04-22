@@ -327,6 +327,176 @@ A integração é opcional e requer um Client ID OAuth do Google Cloud. Siga os 
 | **Equipe** | Visão consolidada de atribuições e menções por colaborador |
 | **Senhas** | Cofre de credenciais armazenadas no repositório privado |
 
+## Changelog
+
+### v0.7β — 19–21 de abril de 2026 (versão atual estável)
+
+#### Sistema de notificações por @menção revisado
+
+O sistema de notificações por email foi depurado e corrigido em profundidade. Toda e qualquer menção `@email` no corpo de texto de cards Kanban, entradas de Conteúdos e Pautas — bem como atribuições via campo Responsável — passa a gerar notificação independentemente do destinatário, inclusive quando remetente e destinatário são o mesmo usuário.
+
+#### Correções
+
+- Remoção do filtro `e !== session?.email` em todos os caminhos de notificação de Kanban, Conteúdos e Pautas — o filtro bloqueava silenciosamente todas as notificações em cenários de teste com email próprio
+  
+- Filtro `prevMentions` removido de `saveMd` e `handleSave`: toda menção presente no texto dispara email a cada salvamento, sem rastrear histórico de envios anteriores
+  
+- Responsável (`assignee`) no Kanban passa a gerar notificação ao ser atribuído; anteriormente apenas o Revisor era notificado
+  
+- Adicionados toasts de confirmação "Notificação enviada" e toast de erro em caso de falha no envio
+
+---
+
+### v0.6β — 19 de abril de 2026
+
+#### Anexos em Conteúdos, edição inline no Kanban e checkbox Revisado
+
+#### Novas funcionalidades
+
+- **Conteúdos — anexos no editor Markdown**: botão Paperclip no diálogo de edição permite anexar documentos e imagens ao corpo da entrada; lista de anexos com remoção individual
+  
+- **Kanban — edição inline**: duplo clique no título ou na descrição de qualquer card abre campo de edição no lugar, sem abrir o diálogo completo; Enter/blur salva; Escape cancela
+  
+- **Kanban — checkbox Revisado**: na coluna Revisão/Aprovação, o revisor designado pode marcar a entrada como revisada; badge BadgeCheck exibido no card após marcação; responsável notificado por email automaticamente
+  
+- **Fallback `generateId`**: `crypto.randomUUID()` recebe fallback em Math.random para contextos não-HTTPS, corrigindo `TypeError: crypto.randomUUID is not a function` em instalações locais via fork
+
+#### Correções
+
+- EmailJS: `from_email` fixado como `noreply@xoxolab.app` para evitar loop de auto-resposta no email de confirmação; campo `sender_email` adicionado ao template com o email real do remetente
+  
+- Guard `users.includes(notifyEmail)` removido de `updateField` em Conteúdos — notificações de atribuição passam a funcionar para colaboradores externos não cadastrados na lista do projeto
+  
+- `@mentions` no corpo de texto de Kanban e Conteúdos passam a disparar notificação por email via `extractMentions()` integrado a `saveMd`, `handleSave` e `handleInlineSave`
+
+---
+
+### v0.5β — 11 de abril de 2026
+
+#### @menções para atribuição, colaboração externa e Políticas reordenáveis
+
+#### Novas funcionalidades
+
+- **Pautas — atribuição por `@`**: digitar `@` no título do diálogo ou no campo de criação inline abre dropdown UserPicker com todos os colaboradores e opção de email externo; ao selecionar, o `@...` é removido do título e o email fica registrado no campo `atribuicao`; ao encaminhar para Conteúdos, a atribuição é copiada e o responsável é notificado por email
+  
+- **UserPicker compartilhado**: componente `src/components/shared/UserPicker.tsx` com portal, reutilizável por Pautas e Conteúdos, com suporte a usuários internos e externos
+  
+- **Conteúdos — atribuição externa**: campo Atribuição aceita qualquer email não cadastrado no projeto; nome completo do colaborador exibido antes do `@`; notificação disparada independentemente de o email constar na lista de usuários
+  
+- **Conteúdos — progresso não-linear**: estado de progresso pode ser alterado para qualquer etapa a qualquer momento, sem seguir o ciclo fixo obrigatório
+  
+- **Políticas — reordenação por drag-and-drop**: itens de Políticas podem ser reordenados livremente; ordem persistida com salvamentos paralelos via `Promise.all` para minimizar latência da API
+  
+- **Navegação Pautas → Conteúdos**: botão de atalho navega diretamente do módulo Pautas para o módulo Conteúdos
+
+#### Correções
+
+- `writeYaml` com retry de até 4 tentativas e backoff exponencial para conflitos de SHA na GitHub Contents API
+  
+- Forwarding de Pautas para Conteúdos protegido por flag para prevenir duplicatas em cliques concorrentes
+  
+- Dropdown de progresso renderizado via `createPortal` para evitar clipping em tabelas com `overflow: hidden`
+  
+- Nome de usuário externo exibido na íntegra no seletor; campo pré-preenchido corretamente ao reabrir item para edição
+
+---
+
+### v0.4β — 9–10 de abril de 2026
+
+#### Efemérides entre projetos e gerenciamento de seções em Pautas
+
+#### Novas funcionalidades
+
+- **Efemérides — integração entre projetos**: calendário permite importar e sobrepor eventos de outros projetos do mesmo usuário, criando uma visão consolidada de múltiplas agendas
+  
+- **Efemérides — barras de múltiplos dias**: eventos que cruzam dias consecutivos são exibidos como barras contínuas na grade do calendário, em vez de entradas repetidas
+  
+- **Pautas — gerenciamento de seções**: seções podem ser renomeadas inline e reordenadas por drag-and-drop
+
+---
+
+### v0.35β — 1–5 de abril de 2026 · DOI [10.5281/zenodo.19434066](https://doi.org/10.5281/zenodo.19434066)
+
+#### Calendário incorporável, dark mode e topbar mobile
+
+#### Novas funcionalidades
+
+- **Efemérides — iframe incorporável**: geração de URL pública para embed do calendário em sites externos; suporte a token read-only na URL para repositórios privados; múltiplas estratégias de encoding de parâmetros para máxima compatibilidade com contextos de iframe
+  
+- **Dark mode completo**: alternância persistente via botão na topbar com estado salvo no localStorage; dark mode aplicado a todos os módulos incluindo Avisos e Kanban
+  
+- **Topbar mobile**: barra de navegação superior responsiva em telas pequenas sem sobreposição ao conteúdo; logo e toggle de tema adaptativos por tamanho de tela
+
+#### Correções
+
+- Múltiplas correções no sistema de embed: encoding URL-safe base64, parsing de hash params em contextos de iframe, fallback de localStorage para token privado, mensagens de erro específicas por tipo de falha
+  
+- Logo mobile corrigido; toggle de tema estendido à tela de seleção de Projetos
+
+---
+
+### v0.2β — 29 de março de 2026 · DOI [10.5281/zenodo.19324592](https://doi.org/10.5281/zenodo.19324592)
+
+#### Novo módulo: Conteúdos; Kanban refatorado em 5 colunas
+
+#### Novas funcionalidades
+
+- **Módulo Conteúdos**: tabela editorial com colunas Descrição, Atribuição, Prazo, Tipo, Importância, Dependência, Progresso e Criado em; edição inline por célula; ao marcar como Pronto o item migra automaticamente para o Kanban (coluna Planejamento) e é removido ao reverter o status
+  
+- **Kanban — 5 colunas**: refatoração para Planejamento · Criação · Revisão/Aprovação · Agendamento · Publicação
+  
+- Cards Kanban exibem data de criação e data de agendamento simultaneamente no tile
+  
+- Agendamento → Publicação automático com migração confiável; cards podem ser arrastados de volta de Publicação (apaga a data de agendamento)
+
+#### Correções
+
+- 4 correções de UX em Kanban e Conteúdos (estados de borda em edição de células, interações de progresso)
+  
+- Auto-recuperação de conflito de SHA no `writeYaml`
+
+---
+
+### v0.1β — 28–29 de março de 2026 · DOI [10.5281/zenodo.19305547](https://doi.org/10.5281/zenodo.19305547)
+
+#### Lançamento inicial
+
+Primeira versão pública do xoxoLAB. Plataforma web estática (React 19 + TypeScript + Vite 7 + Tailwind CSS v4) com armazenamento direto em repositório GitHub privado da equipe via GitHub Contents API (YAML/Markdown), sem backend próprio.
+
+#### Módulos
+
+- **Quadro de Avisos**: matriz Eisenhower para comunicados internos; 4 quadrantes (Crítico, Estrutural, Operacional, Residual); cards com título, descrição Markdown e @menções; área de Concluídos colapsável; exportação PNG/PDF/Excel/Markdown
+  
+- **Pautas**: lista de ideias editoriais por seções temáticas com drag-and-drop; itens com título, corpo Markdown, tags coloridas, data e responsável; botão "Encaminhar para Conteúdos"; exportação PDF/Excel/CSV/Markdown
+  
+- **Kanban**: quadro de gestão de conteúdo com colunas Planejamento/Criação/Revisão/Agendamento/Publicação; cards com plataformas, responsável, revisor, mídia anexada via drag-and-drop, thumbnails de imagem, log de auditoria por card; download individual por card (Markdown/DOCX/ZIP); timeline visual por plataforma com zoom; exportação PNG/PDF/Excel/CSV/Markdown
+  
+- **Efemérides**: calendário de eventos com importação de arquivos ICS, sincronização com Google Calendar, integração da agenda na timeline do Kanban, inserção automática de eventos no Google Calendar, desfazer importação
+  
+- **Políticas**: lista de normas e diretrizes editoriais da equipe
+  
+- **Recursos**: gerenciador de arquivos com upload para repositório GitHub
+  
+- **Senhas**: cofre de senhas compartilhadas com suporte a plataformas customizadas
+  
+- **Equipe**: lista de membros do projeto com emails
+
+#### Infraestrutura
+
+- Backend-less: dados armazenados diretamente no repositório GitHub privado, sem servidor intermediário
+  
+- Deploy estático via GitHub Actions → GitHub Pages com domínio personalizado
+  
+- Múltiplos projetos por usuário, cada um com repositório isolado
+  
+- Modo demonstração sem necessidade de conta GitHub
+  
+- Página de configurações para notificações por email via EmailJS
+  
+- Exportação PNG/PDF via html-to-image (substituto de html2canvas, compatível com oklch/oklab do Tailwind CSS v4)
+  
+- Licença GPL-3.0
+
 ---
 
 *xoxoLAB — Gestão editorial colaborativa · um projeto desenvolvido por [coLAB/UFF](https://colab-uff.github.io/)*
