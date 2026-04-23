@@ -80,6 +80,8 @@ export function Pautas() {
   const [renameSectionTitle, setRenameSectionTitle] = useState('')
 
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
+  const EXCERPT_LIMIT = 120
 
   const [exportOpen, setExportOpen] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
@@ -228,9 +230,37 @@ export function Pautas() {
   }
 
   async function handleDeleteItem(id: string) {
-    const newItems = data.items.filter(i => i.id !== id)
-    await saveData({ ...data, items: newItems })
+    const item = data.items.find(i => i.id === id)
+    if (!item) return
+
+    // Optimistic remove from cache immediately
+    const newData = { ...data, items: data.items.filter(i => i.id !== id) }
+    queryClient.setQueryData(['pautas', projectId], newData)
     setItemDialog(false)
+
+    const originalData = data
+
+    // Schedule actual GitHub write — cancelled if user clicks Desfazer
+    const timeoutId = setTimeout(async () => {
+      try {
+        await savePautas(projectId, newData)
+      } catch (err) {
+        queryClient.setQueryData(['pautas', projectId], originalData)
+        toast({ title: 'Erro ao remover pauta', description: String(err), variant: 'destructive' })
+      }
+    }, 5000)
+
+    toast({
+      title: 'Pauta removida',
+      action: {
+        label: 'Desfazer',
+        onClick: () => {
+          clearTimeout(timeoutId)
+          queryClient.setQueryData(['pautas', projectId], originalData)
+        },
+      },
+      duration: 5000,
+    })
   }
 
   async function handleForwardToConteudos(item: PautaItem) {
@@ -241,6 +271,7 @@ export function Pautas() {
       // Avoid duplicate forwarding
       if (conteudos.items.some(c => c.pautaId === item.id)) {
         toast({ title: 'Pauta já encaminhada', description: 'Esta pauta já foi enviada para Conteúdos.', variant: 'destructive' })
+        setForwarding(null)
         return
       }
       const now = new Date().toISOString()
@@ -257,29 +288,56 @@ export function Pautas() {
         updatedAt: now,
       }
       const updatedConteudos = { ...conteudos, items: [...conteudos.items, newConteudo] }
-      await saveConteudos(projectId, updatedConteudos)
-      // Update React Query cache so Conteúdos page shows new item immediately
+
+      // Capture originals for undo
+      const originalPautaData = data
+      const originalConteudos = conteudos
+
+      // Optimistic updates to both caches
+      const newPautaData = { ...data, items: data.items.filter(i => i.id !== item.id) }
+      queryClient.setQueryData(['pautas', projectId], newPautaData)
       queryClient.setQueryData(['conteudos', projectId], updatedConteudos)
-      // Remove from Pautas
-      await handleDeleteItem(item.id)
-      // Notify assigned user (if any) that a task was assigned to them in Conteúdos
-      if (item.atribuicao) {
-        try {
-          await sendMentionNotification({
-            mentionerEmail: session!.email,
-            mentionedEmail: item.atribuicao,
-            projectName: projectMeta?.name ?? projectId,
-            moduleName: 'Conteúdos',
-            excerpt: `Você foi atribuído ao conteúdo "${item.title}" (encaminhado de Pautas).`,
-          })
-        } catch { /* notification failure should not block forwarding */ }
-      }
-      toast({ title: 'Pauta enviada para Conteúdos' })
-      navigate('../conteudos')
-    } catch (err) {
-      toast({ title: 'Erro ao encaminhar', description: String(err), variant: 'destructive' })
-    } finally {
       setForwarding(null)
+
+      // Schedule actual saves — cancelled if user clicks Desfazer
+      const timeoutId = setTimeout(async () => {
+        try {
+          await saveConteudos(projectId, updatedConteudos)
+          await savePautas(projectId, newPautaData)
+          if (item.atribuicao) {
+            try {
+              await sendMentionNotification({
+                mentionerEmail: session!.email,
+                mentionedEmail: item.atribuicao,
+                projectName: projectMeta?.name ?? projectId,
+                moduleName: 'Conteúdos',
+                excerpt: `Você foi atribuído ao conteúdo "${item.title}" (encaminhado de Pautas).`,
+              })
+            } catch { /* notification failure should not block */ }
+          }
+          navigate('../conteudos')
+        } catch (err) {
+          queryClient.setQueryData(['pautas', projectId], originalPautaData)
+          queryClient.setQueryData(['conteudos', projectId], originalConteudos)
+          toast({ title: 'Erro ao encaminhar', description: String(err), variant: 'destructive' })
+        }
+      }, 5000)
+
+      toast({
+        title: 'Pauta enviada para Conteúdos',
+        action: {
+          label: 'Desfazer',
+          onClick: () => {
+            clearTimeout(timeoutId)
+            queryClient.setQueryData(['pautas', projectId], originalPautaData)
+            queryClient.setQueryData(['conteudos', projectId], originalConteudos)
+          },
+        },
+        duration: 5000,
+      })
+    } catch (err) {
+      setForwarding(null)
+      toast({ title: 'Erro ao encaminhar', description: String(err), variant: 'destructive' })
     }
   }
 
@@ -567,9 +625,35 @@ export function Pautas() {
             <div {...provided.dragHandleProps} className="flex-shrink-0 mt-0.5 cursor-grab active:cursor-grabbing text-gray-300 dark:text-gray-600 hover:text-gray-400 dark:hover:text-gray-400">
               <GripVertical className="w-4 h-4" />
             </div>
-            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEditItem(item)}>
-              <p className="font-medium text-gray-900 dark:text-white text-sm">{item.title}</p>
-              {item.body && <MarkdownRenderer content={item.body.slice(0, 100)} className="text-xs text-gray-500 mt-0.5" />}
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-gray-900 dark:text-white text-sm cursor-pointer" onClick={() => openEditItem(item)}>{item.title}</p>
+              {item.body && (() => {
+                const isLong = item.body.length > EXCERPT_LIMIT
+                const isExpanded = expandedItems.has(item.id)
+                return (
+                  <div>
+                    <MarkdownRenderer
+                      content={isExpanded ? item.body : item.body.slice(0, EXCERPT_LIMIT)}
+                      className="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
+                    />
+                    {isLong && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation()
+                          setExpandedItems(prev => {
+                            const next = new Set(prev)
+                            isExpanded ? next.delete(item.id) : next.add(item.id)
+                            return next
+                          })
+                        }}
+                        className="text-[11px] text-purple-500 hover:text-purple-700 dark:text-purple-400 font-medium mt-0.5 leading-none"
+                      >
+                        {isExpanded ? '↑ Ver menos' : '↓ Ver mais'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 {item.tags.map(tagId => {
                   const tag = data.tags.find(t => t.id === tagId)

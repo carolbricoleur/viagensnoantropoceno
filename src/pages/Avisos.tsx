@@ -79,7 +79,18 @@ function AvisoCard({
             <div className="min-w-0 flex-1">
               <p className="font-semibold text-gray-900 dark:text-white text-xs leading-tight truncate">{aviso.title}</p>
               {aviso.body && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2 leading-snug">{aviso.body.slice(0, 80)}</p>
+                <div className="mt-0.5 line-clamp-2 text-xs text-gray-500 dark:text-gray-400 leading-snug
+                  [&_.prose]:text-xs [&_p]:m-0 [&_p]:leading-snug [&_p]:text-xs [&_p]:text-gray-500
+                  [&_strong]:font-semibold [&_strong]:text-gray-600 [&_em]:italic
+                  [&_h1]:text-xs [&_h1]:font-semibold [&_h1]:m-0
+                  [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:m-0
+                  [&_h3]:text-xs [&_h3]:font-semibold [&_h3]:m-0
+                  [&_ul]:m-0 [&_ul]:pl-3 [&_li]:text-xs [&_li]:m-0
+                  [&_ol]:m-0 [&_ol]:pl-3
+                  [&_blockquote]:m-0 [&_blockquote]:pl-2 [&_blockquote]:text-xs
+                  [&_code]:text-xs [&_pre]:text-xs [&_pre]:m-0 dark:[&_p]:text-gray-400">
+                  <MarkdownRenderer content={aviso.body.slice(0, 100)} />
+                </div>
               )}
               <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">{aviso.author.split('@')[0]}</p>
             </div>
