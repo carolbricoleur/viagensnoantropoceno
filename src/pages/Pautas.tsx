@@ -610,6 +610,17 @@ export function Pautas() {
     setTimeout(() => quickRef.current?.focus(), 0)
   }
 
+  function excerptMarkdown(text: string, limit: number): string {
+    if (text.length <= limit) return text
+    const linkRe = /!?\[([^\]]*)\]\([^)]*\)/g
+    let cutAt = limit
+    let m: RegExpExecArray | null
+    while ((m = linkRe.exec(text)) !== null) {
+      if (m.index < limit && m.index + m[0].length > limit) { cutAt = m.index; break }
+    }
+    return text.slice(0, cutAt)
+  }
+
   function renderItem(item: PautaItem, index: number) {
     return (
       <Draggable key={item.id} draggableId={item.id} index={index}>
@@ -633,7 +644,7 @@ export function Pautas() {
                 return (
                   <div>
                     <MarkdownRenderer
-                      content={isExpanded ? item.body : item.body.slice(0, EXCERPT_LIMIT)}
+                      content={isExpanded ? item.body : excerptMarkdown(item.body, EXCERPT_LIMIT)}
                       className="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
                     />
                     {isLong && (
