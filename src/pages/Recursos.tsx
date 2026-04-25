@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Link2, Upload, Download, Trash2, ExternalLink, X, File } from 'lucide-react'
+import { Plus, Link2, Upload, Download, Trash2, ExternalLink, X, File, Copy } from 'lucide-react'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadRecursos, saveRecursos, uploadTemplate } from '@/lib/storage'
 import { readFile, getGitHubConfig } from '@/lib/github'
@@ -113,6 +113,15 @@ export function Recursos() {
     await saveData({ ...data, templates: data.templates.filter(t => t.id !== id) })
   }
 
+  async function handleCopyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url)
+      toast({ title: 'Link copiado!' })
+    } catch {
+      toast({ title: 'Erro ao copiar link', variant: 'destructive' })
+    }
+  }
+
   async function handleDownloadTemplate(path: string, name: string, type: string) {
     try {
       const cfg = getGitHubConfig()
@@ -215,6 +224,11 @@ export function Recursos() {
                     <p className="text-xs text-gray-400 dark:text-gray-500">{formatSize(t.size)}</p>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {t.url && (
+                      <button onClick={() => handleCopyLink(t.url!)} className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" title="Copiar link">
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     {t.path && (
                       <button onClick={() => handleDownloadTemplate(t.path, t.name, t.type)} className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" title="Baixar">
                         <Download className="w-3.5 h-3.5" />
