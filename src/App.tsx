@@ -18,6 +18,7 @@ import { Recursos } from '@/pages/Recursos'
 import { Equipe } from '@/pages/Equipe'
 import { Senhas } from '@/pages/Senhas'
 import { EfemeridesEmbed } from '@/pages/EfemeridesEmbed'
+import { FileDownload } from '@/pages/FileDownload'
 import { NotFound } from '@/pages/NotFound'
 
 const queryClient = new QueryClient({
@@ -45,6 +46,7 @@ export default function App() {
               <Route index element={<Navigate to="/projects" replace />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/file/:projectId/:templateId" element={<FileDownload />} />
               <Route path="/projects/:projectId" element={<ProjectLayout />}>
                 <Route index element={<Navigate to="avisos" replace />} />
                 <Route path="avisos" element={<Avisos />} />

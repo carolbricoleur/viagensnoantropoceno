@@ -113,7 +113,9 @@ export function Recursos() {
     await saveData({ ...data, templates: data.templates.filter(t => t.id !== id) })
   }
 
-  async function handleCopyLink(url: string) {
+  async function handleCopyLink(templateId: string) {
+    const base = window.location.href.split('#')[0]
+    const url = `${base}#/file/${projectId}/${templateId}`
     try {
       await navigator.clipboard.writeText(url)
       toast({ title: 'Link copiado!' })
@@ -224,11 +226,9 @@ export function Recursos() {
                     <p className="text-xs text-gray-400 dark:text-gray-500">{formatSize(t.size)}</p>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {t.path && (
-                      <button onClick={() => handleCopyLink(t.path)} className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" title="Copiar caminho">
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <button onClick={() => handleCopyLink(t.id)} className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" title="Copiar link">
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
                     {t.path && (
                       <button onClick={() => handleDownloadTemplate(t.path, t.name, t.type)} className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" title="Baixar">
                         <Download className="w-3.5 h-3.5" />
