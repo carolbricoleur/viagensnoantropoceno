@@ -572,18 +572,9 @@ export function Avisos() {
             return (
               <>
                 <DialogHeader>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className={cn('w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5', cfg.color)} />
-                      <DialogTitle className="text-base leading-snug">{previewing.title}</DialogTitle>
-                    </div>
-                    <button
-                      onClick={() => { const a = previewing; setPreviewing(null); openEdit(a) }}
-                      className="p-1 text-gray-400 hover:text-purple-600 flex-shrink-0"
-                      title="Editar"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
+                  <div className="flex items-center gap-2 pr-6">
+                    <div className={cn('w-2.5 h-2.5 rounded-full flex-shrink-0', cfg.color)} />
+                    <DialogTitle className="text-base leading-snug">{previewing.title}</DialogTitle>
                   </div>
                   <div className="flex items-center gap-2 mt-1.5">
                     <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium border', cfg.bgColor, cfg.borderColor)}>{cfg.label}</span>
@@ -598,6 +589,11 @@ export function Avisos() {
                     <span>{formatDateTime(previewing.createdAt)}</span>
                   </div>
                 </div>
+                <DialogFooter>
+                  <Button variant="outline" size="sm" onClick={() => { const a = previewing; setPreviewing(null); openEdit(a) }}>
+                    <Pencil className="w-3.5 h-3.5" /> Editar
+                  </Button>
+                </DialogFooter>
               </>
             )
           })()}

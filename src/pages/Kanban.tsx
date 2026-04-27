@@ -1292,16 +1292,7 @@ export function Kanban() {
             return (
               <>
                 <DialogHeader>
-                  <div className="flex items-start justify-between gap-3">
-                    <DialogTitle className="text-base leading-snug flex-1 min-w-0">{previewCard.title}</DialogTitle>
-                    <button
-                      onClick={() => { const c = previewCard; setPreviewCard(null); openEdit(c) }}
-                      className="p-1 text-gray-400 hover:text-purple-600 flex-shrink-0"
-                      title="Editar card"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <DialogTitle className="text-base leading-snug pr-6">{previewCard.title}</DialogTitle>
                   <div className="flex flex-wrap gap-2 mt-1.5">
                     <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{colLabel}</span>
                     {priorityLabel && <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">{priorityLabel}</span>}
@@ -1340,6 +1331,11 @@ export function Kanban() {
                     </div>
                   )}
                 </div>
+                <DialogFooter>
+                  <Button variant="outline" size="sm" onClick={() => { const c = previewCard; setPreviewCard(null); openEdit(c) }}>
+                    <Pencil className="w-3.5 h-3.5" /> Editar
+                  </Button>
+                </DialogFooter>
               </>
             )
           })()}
