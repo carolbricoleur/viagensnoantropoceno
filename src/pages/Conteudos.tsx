@@ -1,15 +1,15 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Pencil, ChevronUp, ChevronDown, X,
-  ChevronRight, Calendar, Tag, Paperclip,
+  ChevronRight, Calendar, Tag, Paperclip, Trash2,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProject } from '@/contexts/ProjectContext'
-import { loadConteudos, saveConteudos, saveKanbanCard, deleteKanbanCard } from '@/lib/storage'
+import { loadConteudos, saveConteudos, saveKanbanCard, deleteKanbanCard, uploadConteudoAttachment } from '@/lib/storage'
 import { sendMentionNotification } from '@/lib/emailjs'
-import { generateId, formatDate } from '@/lib/utils'
+import { generateId, formatDate, extractMentions } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -17,7 +17,7 @@ import { MarkdownEditor } from '@/components/shared/MarkdownEditor'
 import { useToast } from '@/hooks/useToast'
 import { ToastContainer } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
-import type { ConteudoData, ConteudoItem, ConteudoProgresso, ConteudoImportancia, KanbanCard } from '@/types'
+import type { ConteudoData, ConteudoItem, ConteudoProgresso, ConteudoImportancia, KanbanCard, Attachment } from '@/types'
 import { UserPicker } from '@/components/shared/UserPicker'
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -79,6 +79,9 @@ export function Conteudos() {
   const [mdDialogItem, setMdDialogItem] = useState<ConteudoItem | null>(null)
   const [mdBody, setMdBody] = useState('')
   const [savingMd, setSavingMd] = useState(false)
+  const [mdAttachments, setMdAttachments] = useState<Attachment[]>([])
+  const [mdAttachUploading, setMdAttachUploading] = useState(false)
+  const mdFileRef = useRef<HTMLInputElement>(null)
 
   // Progresso dropdown (portal-based)
   const [progressoOpen, setProgressoOpen] = useState<string | null>(null)
@@ -213,7 +216,8 @@ export function Conteudos() {
   async function updateField(item: ConteudoItem, patch: Partial<ConteudoItem>, notifyEmail?: string) {
     const updated: ConteudoItem = { ...item, ...patch, updatedAt: new Date().toISOString() }
     await saveData({ ...data, items: data.items.map(i => i.id === item.id ? updated : i) })
-    if (notifyEmail && notifyEmail !== session?.email && users.includes(notifyEmail)) {
+    // Notify any assigned email (internal or external) — skip only self-assignment
+    if (notifyEmail) {
       await sendMentionNotification({
         mentionerEmail: session!.email,
         mentionedEmail: notifyEmail,
@@ -261,15 +265,33 @@ export function Conteudos() {
   function openMdDialog(item: ConteudoItem) {
     setMdDialogItem(item)
     setMdBody(item.body ?? '')
+    setMdAttachments(item.attachments ?? [])
   }
 
   async function saveMd() {
     if (!mdDialogItem) return
     setSavingMd(true)
     try {
-      await updateField(mdDialogItem, { body: mdBody })
-      setMdDialogItem(null)
+      const newMentions = extractMentions(mdBody)
+      // Always notify all @mentions in body on every save
+      const toNotify = newMentions
+      await updateField(mdDialogItem, { body: mdBody, attachments: mdAttachments, mentions: newMentions })
+      for (const email of toNotify) {
+        try {
+          await sendMentionNotification({
+            mentionerEmail: session!.email,
+            mentionedEmail: email,
+            projectName: projectMeta?.name ?? projectId,
+            moduleName: 'Conteúdos',
+            excerpt: mdBody.slice(0, 200),
+          })
+          toast({ title: 'Notificação enviada', description: email })
+        } catch (notifyErr) {
+          toast({ title: `Falha ao notificar ${email}`, description: String(notifyErr), variant: 'destructive' })
+        }
+      }
       toast({ title: 'Texto salvo' })
+      setMdDialogItem(null)
     } catch (err) {
       toast({ title: 'Erro', description: String(err), variant: 'destructive' })
     }
@@ -296,6 +318,26 @@ export function Conteudos() {
   function SortIcon({ col }: { col: SortCol }) {
     if (sortCol !== col) return <ChevronRight className="w-3 h-3 text-gray-300 rotate-90" />
     return sortAsc ? <ChevronUp className="w-3 h-3 text-violet-500" /> : <ChevronDown className="w-3 h-3 text-violet-500" />
+  }
+
+  async function handleConteudoAttach(files: FileList) {
+    if (!mdDialogItem) return
+    setMdAttachUploading(true)
+    try {
+      const results: Attachment[] = []
+      for (const file of Array.from(files)) {
+        if (file.size > 50 * 1024 * 1024) {
+          toast({ title: `"${file.name}" muito grande (máx 50 MB)`, variant: 'destructive' })
+          continue
+        }
+        const att = await uploadConteudoAttachment(projectId, mdDialogItem.id, file)
+        results.push(att)
+      }
+      setMdAttachments(prev => [...prev, ...results])
+    } catch (err) {
+      toast({ title: 'Erro no upload', description: String(err), variant: 'destructive' })
+    }
+    setMdAttachUploading(false)
   }
 
   function renderRow(item: ConteudoItem) {
@@ -563,6 +605,57 @@ export function Conteudos() {
               placeholder="Texto completo do conteúdo…"
               minHeight={200}
             />
+            {/* Attachments */}
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Anexos</span>
+                <button
+                  type="button"
+                  onClick={() => mdFileRef.current?.click()}
+                  disabled={mdAttachUploading}
+                  className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 disabled:opacity-50"
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                  {mdAttachUploading ? 'Enviando…' : 'Anexar arquivo'}
+                </button>
+                <input
+                  ref={mdFileRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={e => { if (e.target.files?.length) { handleConteudoAttach(e.target.files); e.target.value = '' } }}
+                />
+              </div>
+              {mdAttachments.length > 0 && (
+                <div className="space-y-1">
+                  {mdAttachments.map(att => (
+                    <div key={att.id} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900 rounded px-3 py-1.5">
+                      <Paperclip className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      <a
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-violet-600 hover:underline flex-1 truncate"
+                      >
+                        {att.name}
+                      </a>
+                      <span className="text-[10px] text-gray-400 flex-shrink-0">
+                        {att.size < 1024 * 1024 ? `${(att.size / 1024).toFixed(0)} KB` : `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
+                      </span>
+                      <button
+                        onClick={() => setMdAttachments(prev => prev.filter(a => a.id !== att.id))}
+                        className="text-gray-300 hover:text-red-400 flex-shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {mdAttachments.length === 0 && (
+                <p className="text-[11px] text-gray-300 dark:text-gray-600 italic">Nenhum anexo</p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMdDialogItem(null)}>Cancelar</Button>

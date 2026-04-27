@@ -385,3 +385,23 @@ export async function uploadKanbanAttachment(
     url: getRawUrl(cfg(), path),
   }
 }
+
+export async function uploadConteudoAttachment(
+  projectId: string,
+  itemId: string,
+  file: File
+): Promise<Attachment> {
+  if (isDemoMode()) return demoUploadAttachment(file)
+  const id = generateId()
+  const path = `projects/${projectId}/conteudos/attachments/${itemId}/${id}-${file.name}`
+  const res = await writeBinaryFile(cfg(), path, file, `Upload conteudo attachment ${file.name}`)
+  shaCache.set(path, res.content.sha)
+  return {
+    id,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    path,
+    url: getRawUrl(cfg(), path),
+  }
+}

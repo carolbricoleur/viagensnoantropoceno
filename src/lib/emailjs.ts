@@ -42,7 +42,8 @@ export async function sendMentionNotification(params: {
       cfg.serviceId,
       cfg.templateId,
       {
-        from_email: params.mentionerEmail,
+        from_email: 'noreply@xoxolab.app',  // fixed sender — prevents auto-reply loops
+        sender_email: params.mentionerEmail, // actual user displayed in template body
         to_email: params.mentionedEmail,
         project_name: params.projectName,
         module_name: params.moduleName,
