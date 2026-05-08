@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
-import { Plus, Download, CheckCircle2, ChevronDown, ChevronUp, X, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react'
+import { Plus, Download, CheckCircle2, ChevronDown, ChevronUp, X, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Pencil } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadAvisos, saveAviso, deleteAviso } from '@/lib/storage'
@@ -44,11 +44,13 @@ function AvisoCard({
   index,
   onDone,
   onClick,
+  onEdit,
 }: {
   aviso: Aviso
   index: number
   onDone: (id: string) => void
   onClick: () => void
+  onEdit: () => void
 }) {
   const cfg = PRIORITY_CONFIG[aviso.priority]
   return (
@@ -63,7 +65,7 @@ function AvisoCard({
             cfg.borderColor,
             snapshot.isDragging && 'shadow-lg ring-2 ring-purple-300 rotate-1'
           )}
-          onClick={onClick}
+          onClick={snapshot.isDragging ? undefined : onClick}
         >
           <div className="flex items-start gap-2">
             <button
@@ -94,6 +96,14 @@ function AvisoCard({
               )}
               <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">{aviso.author.split('@')[0]}</p>
             </div>
+            <button
+              type="button"
+              title="Editar aviso"
+              onClick={e => { e.stopPropagation(); onEdit() }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-gray-400 hover:text-purple-600 flex-shrink-0"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       )}
@@ -106,11 +116,13 @@ function Quadrant({
   avisos,
   onDone,
   onCardClick,
+  onCardEdit,
 }: {
   priority: AvisoPriority
   avisos: Aviso[]
   onDone: (id: string) => void
   onCardClick: (a: Aviso) => void
+  onCardEdit: (a: Aviso) => void
 }) {
   const cfg = PRIORITY_CONFIG[priority]
   const minWidth = getCardMinWidth(avisos.length)
@@ -139,7 +151,7 @@ function Quadrant({
             }}
           >
             {avisos.map((a, i) => (
-              <AvisoCard key={a.id} aviso={a} index={i} onDone={onDone} onClick={() => onCardClick(a)} />
+              <AvisoCard key={a.id} aviso={a} index={i} onDone={onDone} onClick={() => onCardClick(a)} onEdit={() => onCardEdit(a)} />
             ))}
             {avisos.length === 0 && !snapshot.isDraggingOver && (
               <p className="text-xs text-gray-300 dark:text-gray-600 italic col-span-full text-center py-4">Nenhum aviso</p>
@@ -164,6 +176,7 @@ export function Avisos() {
   const [body, setBody] = useState('')
   const [priority, setPriority] = useState<AvisoPriority>('critico')
   const [saving, setSaving] = useState(false)
+  const [previewing, setPreviewing] = useState<Aviso | null>(null)
   const [showDone, setShowDone] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
@@ -233,6 +246,8 @@ export function Avisos() {
     setPriority(a.priority)
     setDialogOpen(true)
   }
+
+  function openPreview(a: Aviso) { setPreviewing(a) }
 
   async function handleSave() {
     if (!title.trim()) return
@@ -465,7 +480,7 @@ export function Avisos() {
             >
               {/* TL: Estrutural (Baixa Iminência + Alto Empenho) */}
               <div style={{ padding: '0 8px 8px 0' }}>
-                <Quadrant priority="estrutural" avisos={byPriority.estrutural} onDone={handleDone} onCardClick={openEdit} />
+                <Quadrant priority="estrutural" avisos={byPriority.estrutural} onDone={handleDone} onCardClick={openPreview} onCardEdit={openEdit} />
               </div>
 
               {/* Vertical axis — top segment */}
@@ -473,7 +488,7 @@ export function Avisos() {
 
               {/* TR: Crítico (Alta Iminência + Alto Empenho) */}
               <div style={{ padding: '0 0 8px 8px' }}>
-                <Quadrant priority="critico" avisos={byPriority.critico} onDone={handleDone} onCardClick={openEdit} />
+                <Quadrant priority="critico" avisos={byPriority.critico} onDone={handleDone} onCardClick={openPreview} onCardEdit={openEdit} />
               </div>
 
               {/* Horizontal axis — left segment */}
@@ -487,7 +502,7 @@ export function Avisos() {
 
               {/* BL: Residual (Baixa Iminência + Baixo Empenho) */}
               <div style={{ padding: '8px 8px 0 0' }}>
-                <Quadrant priority="residual" avisos={byPriority.residual} onDone={handleDone} onCardClick={openEdit} />
+                <Quadrant priority="residual" avisos={byPriority.residual} onDone={handleDone} onCardClick={openPreview} onCardEdit={openEdit} />
               </div>
 
               {/* Vertical axis — bottom segment */}
@@ -495,7 +510,7 @@ export function Avisos() {
 
               {/* BR: Operacional (Alta Iminência + Baixo Empenho) */}
               <div style={{ padding: '8px 0 0 8px' }}>
-                <Quadrant priority="operacional" avisos={byPriority.operacional} onDone={handleDone} onCardClick={openEdit} />
+                <Quadrant priority="operacional" avisos={byPriority.operacional} onDone={handleDone} onCardClick={openPreview} onCardEdit={openEdit} />
               </div>
             </div>
 
@@ -548,6 +563,42 @@ export function Avisos() {
           )}
         </div>
       )}
+
+      {/* Preview Modal */}
+      <Dialog open={previewing !== null} onOpenChange={open => { if (!open) setPreviewing(null) }}>
+        <DialogContent className="max-w-2xl">
+          {previewing && (() => {
+            const cfg = PRIORITY_CONFIG[previewing.priority]
+            return (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center gap-2 pr-6">
+                    <div className={cn('w-2.5 h-2.5 rounded-full flex-shrink-0', cfg.color)} />
+                    <DialogTitle className="text-base leading-snug">{previewing.title}</DialogTitle>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium border', cfg.bgColor, cfg.borderColor)}>{cfg.label}</span>
+                    <span className="text-xs text-gray-400">{cfg.subtitle}</span>
+                  </div>
+                </DialogHeader>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                  {previewing.body && <MarkdownRenderer content={previewing.body} className="text-sm" />}
+                  <div className="flex flex-wrap gap-2 text-xs text-gray-400 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    <span>Por {previewing.author.split('@')[0]}</span>
+                    <span>·</span>
+                    <span>{formatDateTime(previewing.createdAt)}</span>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" size="sm" onClick={() => { const a = previewing; setPreviewing(null); openEdit(a) }}>
+                    <Pencil className="w-3.5 h-3.5" /> Editar
+                  </Button>
+                </DialogFooter>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

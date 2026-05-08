@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { MarkdownEditor } from '@/components/shared/MarkdownEditor'
+import { MarkdownEditor, MarkdownRenderer } from '@/components/shared/MarkdownEditor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/useToast'
 import { ToastContainer } from '@/components/ui/toast'
@@ -138,6 +138,7 @@ function KanbanTimeline({
 function KanbanCardView({
   card,
   onEdit,
+  onPreview,
   onQuickAttach,
   onDownloadCard,
   projectUsers = [],
@@ -146,6 +147,7 @@ function KanbanCardView({
 }: {
   card: KanbanCard
   onEdit: () => void
+  onPreview?: () => void
   onQuickAttach: (files: FileList) => void
   onDownloadCard: (fmt: 'md' | 'docx' | 'zip') => void
   projectUsers?: string[]
@@ -186,9 +188,10 @@ function KanbanCardView({
   return (
     <div
       className={cn(
-        'group bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 border-l-4 p-3 shadow-sm hover:shadow-md transition-shadow',
+        'group bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 border-l-4 p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer',
         borderColorClass,
       )}
+      onClick={() => onPreview?.()}
     >
       <div className="flex items-start gap-1">
         <div className="flex-1 min-w-0">
@@ -212,6 +215,7 @@ function KanbanCardView({
           ) : (
             <p
               className="font-semibold text-gray-900 dark:text-white text-sm leading-snug mb-0.5 cursor-text"
+              onClick={e => e.stopPropagation()}
               onDoubleClick={e => { e.stopPropagation(); setEditingTitle(true); setTitleVal(card.title) }}
               title="Clique duplo para editar"
             >
@@ -296,6 +300,7 @@ function KanbanCardView({
       ) : (
         <p
           className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2 mt-1 cursor-text min-h-[1rem]"
+          onClick={e => e.stopPropagation()}
           onDoubleClick={e => { e.stopPropagation(); setEditingDesc(true); setDescVal(card.description) }}
           title="Clique duplo para editar"
         >
@@ -460,6 +465,7 @@ export function Kanban() {
     new Set(COLUMNS.filter(c => c.collapsedByDefault).map(c => c.id))
   )
   const [zoom, setZoom] = useState(1)
+  const [previewCard, setPreviewCard] = useState<KanbanCard | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editCard, setEditCard] = useState<KanbanCard | null>(null)
   const [editColumn, setEditColumn] = useState<KanbanColumn>('criacao')
@@ -1247,6 +1253,7 @@ export function Kanban() {
                                     <KanbanCardView
                                       card={card}
                                       onEdit={() => openEdit(card)}
+                                      onPreview={snapshot.isDragging ? undefined : () => setPreviewCard(card)}
                                       projectUsers={projectMeta?.users ?? []}
                                       onQuickAttach={files => {
                                         if (card.pautaId) { toast({ title: 'Abra o card para anexar mídias' }); return }
@@ -1272,6 +1279,68 @@ export function Kanban() {
           </div>
         </DragDropContext>
       </div>
+
+      {/* Card Preview Modal */}
+      <Dialog open={previewCard !== null} onOpenChange={open => { if (!open) setPreviewCard(null) }}>
+        <DialogContent className="max-w-2xl">
+          {previewCard && (() => {
+            const colLabel = COLUMNS.find(c => c.id === previewCard.column)?.label ?? previewCard.column
+            const priorityLabel = previewCard.priority ? PRIORITY_LABELS[previewCard.priority] : null
+            const today = todayISO()
+            const isOverdue = previewCard.dueDate && previewCard.dueDate < today
+            const isDueSoon = previewCard.dueDate && !isOverdue && previewCard.dueDate <= new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0]
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-base leading-snug pr-6">{previewCard.title}</DialogTitle>
+                  <div className="flex flex-wrap gap-2 mt-1.5">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{colLabel}</span>
+                    {priorityLabel && <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">{priorityLabel}</span>}
+                  </div>
+                </DialogHeader>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                  {previewCard.description
+                    ? <MarkdownRenderer content={previewCard.description} className="text-sm" />
+                    : <p className="text-sm text-gray-400 italic">Sem descrição</p>}
+                  {previewCard.platforms.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                      {previewCard.platforms.map(pid => {
+                        const p = getPlatform(pid)
+                        return p
+                          ? <span key={pid} className={cn('text-xs px-2 py-0.5 rounded-full border', p.bgColor, p.textColor, p.borderColor)}>{p.label}</span>
+                          : <span key={pid} className="text-xs px-2 py-0.5 rounded-full border bg-gray-50 text-gray-600 border-gray-200">{pid}</span>
+                      })}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    {previewCard.assignee && <div className="flex items-center gap-1"><User className="w-3.5 h-3.5 text-violet-400" />{previewCard.assignee.split('@')[0]}</div>}
+                    {previewCard.reviewer && <div className="flex items-center gap-1"><UserCheck className="w-3.5 h-3.5 text-blue-400" />{previewCard.reviewer.split('@')[0]}</div>}
+                    {previewCard.dueDate && <div className={cn('flex items-center gap-1', isOverdue ? 'text-red-500' : isDueSoon ? 'text-amber-500' : '')}><Calendar className="w-3.5 h-3.5" />Publicação: {formatDate(previewCard.dueDate)}</div>}
+                    {previewCard.scheduledAt && <div className="flex items-center gap-1 text-purple-600 font-medium"><CalendarCheck className="w-3.5 h-3.5" />Agendado: {formatDate(previewCard.scheduledAt)}</div>}
+                  </div>
+                  {(previewCard.attachments ?? []).length > 0 && (
+                    <div className="pt-2 border-t border-gray-100 dark:border-gray-700 space-y-1">
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Anexos ({previewCard.attachments.length})</p>
+                      <div className="flex flex-wrap gap-2">
+                        {previewCard.attachments.map(att => (
+                          <span key={att.id} className="flex items-center gap-1 text-xs text-gray-500">
+                            <Paperclip className="w-3 h-3" />{att.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" size="sm" onClick={() => { const c = previewCard; setPreviewCard(null); openEdit(c) }}>
+                    <Pencil className="w-3.5 h-3.5" /> Editar
+                  </Button>
+                </DialogFooter>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Card dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
