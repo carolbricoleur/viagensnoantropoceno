@@ -16,7 +16,11 @@ Toda a persistência de dados ocorre diretamente em um repositório GitHub priva
 
 ---
 
-## Módulos
+## :clapper: Tutorial
+
+<a href="https://www.loom.com/share/287300e4c8a34d969248bb3a1f91b4cb"><img src="screenshots/tutorial_xoxolab.png"></a>
+
+## :gem: Módulos
 
 ### 1. Gestão de Projetos
 
