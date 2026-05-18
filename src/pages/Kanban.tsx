@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
+import JSZip from 'jszip'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
 import {
@@ -917,7 +918,6 @@ export function Kanban() {
 
   async function exportCardZip(card: KanbanCard) {
     try {
-      const JSZip = (await import('jszip')).default
       const zip = new JSZip()
       zip.file(`${card.id}.md`, cardToMarkdown(card))
 
