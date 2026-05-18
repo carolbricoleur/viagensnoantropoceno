@@ -582,21 +582,16 @@ export function Kanban() {
     try {
       const now = new Date().toISOString()
       const newMentions = extractMentions(cardDesc)
-      // Always notify all @mentions in body on every save
-      const toNotify = new Set(newMentions)
+      // @mentions from body text — notified after save
+      const mentionsToNotify = new Set(newMentions)
 
       const platforms = cardCustomPlatform.trim()
         ? [...new Set([...cardPlatforms, cardCustomPlatform.trim()])]
         : cardPlatforms
 
-      // Notify assignee if newly set
-      if (cardAssignee && cardAssignee !== editCard?.assignee) {
-        toNotify.add(cardAssignee)
-      }
-      // Notify reviewer if newly set
-      if (cardReviewer && cardReviewer !== editCard?.reviewer) {
-        toNotify.add(cardReviewer)
-      }
+      // Track whether assignee / reviewer are newly set (notified after save with dedicated messages)
+      const assigneeIsNew = !!(cardAssignee && cardAssignee !== editCard?.assignee)
+      const reviewerIsNew = !!(cardReviewer && cardReviewer !== editCard?.reviewer)
 
       let card: KanbanCard
       if (editCard) {
@@ -650,7 +645,8 @@ export function Kanban() {
         queryClient.setQueryData(['kanban', projectId], (prev: KanbanCard[] = []) => [...prev, card])
       }
 
-      for (const email of toNotify) {
+      // @mention notifications — body text
+      for (const email of mentionsToNotify) {
         try {
           await sendMentionNotification({
             mentionerEmail: session!.email,
@@ -663,6 +659,34 @@ export function Kanban() {
         } catch (notifyErr) {
           toast({ title: `Falha ao notificar ${email}`, description: String(notifyErr), variant: 'destructive' })
         }
+      }
+
+      // Assignee notification — dedicated message
+      if (assigneeIsNew) {
+        try {
+          await sendMentionNotification({
+            mentionerEmail: session!.email,
+            mentionedEmail: cardAssignee,
+            projectName: projectMeta?.name ?? projectId,
+            moduleName: 'Kanban',
+            excerpt: `Você foi designado(a) como responsável pelo conteúdo "${cardTitle.trim()}".`,
+          })
+          toast({ title: 'Responsável notificado', description: cardAssignee })
+        } catch { /* notification failure should not block save */ }
+      }
+
+      // Reviewer notification — dedicated message
+      if (reviewerIsNew) {
+        try {
+          await sendMentionNotification({
+            mentionerEmail: session!.email,
+            mentionedEmail: cardReviewer,
+            projectName: projectMeta?.name ?? projectId,
+            moduleName: 'Kanban',
+            excerpt: `Você foi designado(a) como revisor(a) do conteúdo "${cardTitle.trim()}".`,
+          })
+          toast({ title: 'Revisor notificado', description: cardReviewer })
+        } catch { /* notification failure should not block save */ }
       }
 
       // Immediate transfer: if card is in agendamento and scheduledAt <= today, move to publicacao now
