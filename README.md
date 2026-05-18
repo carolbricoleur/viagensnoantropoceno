@@ -333,7 +333,23 @@ A integração é opcional e requer um Client ID OAuth do Google Cloud. Siga os 
 
 ## Changelog
 
-### v0.7β — 19–21 de abril de 2026 (versão atual estável)
+### v0.8β — 23 de abril de 2026 (versão atual estável)
+
+#### Preview Markdown no Quadro de Avisos, expand/collapse em Pautas e undo com timer
+
+#### Novas funcionalidades
+
+- **Quadro de Avisos — preview formatado**: o corpo dos cards agora renderiza Markdown real (negrito, itálico, listas etc.) em vez de exibir o código bruto; estilos `prose` compactos adaptados ao espaço reduzido de cada card na matriz
+
+- **Pautas — Ver mais / Ver menos**: descrições com mais de 120 caracteres exibem um trecho truncado seguido de botão **"↓ Ver mais"**; ao clicar, a descrição completa expande no lugar sem abrir o diálogo; **"↑ Ver menos"** colapsa de volta
+
+- **Pautas — Desfazer com temporizador**: ao remover ou encaminhar uma pauta para Conteúdos, a ação é aplicada otimisticamente ao cache (UI atualiza imediatamente) e a escrita no GitHub é agendada para 5 s; um toast com botão **"Desfazer"** e barra de progresso animada permite cancelar antes do prazo, restaurando o estado original em ambos os módulos
+
+- **Toast — barra de progresso e ação inline**: o componente `Toast` recebe agora `duration` configurável e exibe barra de progresso roxa animada via CSS transition; suporte a `action` com botão inline para ações reversíveis
+
+---
+
+### v0.7β — 19–21 de abril de 2026
 
 #### Sistema de notificações por @menção revisado
 
