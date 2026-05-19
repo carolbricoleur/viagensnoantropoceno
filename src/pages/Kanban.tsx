@@ -13,7 +13,7 @@ import { ptBR } from 'date-fns/locale'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadKanbanCards, saveKanbanCard, deleteKanbanCard, loadEventos, uploadKanbanAttachment } from '@/lib/storage'
-import { getGitHubConfig, getRawUrl } from '@/lib/github'
+import { getGitHubConfig, readFileBinary } from '@/lib/github'
 import { sendMentionNotification } from '@/lib/emailjs'
 import { extractMentions, generateId, formatDate, formatDateTime, todayISO } from '@/lib/utils'
 import { getPlatform, PLATFORMS, getPlatformBorderColor } from '@/lib/platforms'
@@ -916,18 +916,16 @@ export function Kanban() {
     }
   }
 
-  /** Fetch an attachment at full original quality using the raw URL + auth token */
+  /**
+   * Fetch an attachment at full original quality via the GitHub Contents API
+   * (Accept: application/vnd.github.raw).  Using api.github.com instead of
+   * raw.githubusercontent.com avoids the CORS restriction that prevents
+   * sending Authorization headers to the wildcard-origin CDN endpoint.
+   */
   async function fetchAttachmentBlob(att: Attachment): Promise<Blob> {
     const cfg = getGitHubConfig()
     if (!cfg) throw new Error('GitHub não configurado')
-    // url may be absent on attachments saved before this field was introduced;
-    // reconstruct it from path in that case
-    const rawUrl = att.url ?? getRawUrl(cfg, att.path)
-    const res = await fetch(rawUrl, {
-      headers: { Authorization: `Bearer ${cfg.token}` },
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status} ao buscar ${att.name}`)
-    return res.blob()
+    return readFileBinary(cfg, att.path)
   }
 
   /** Download a single attachment at full original resolution */
