@@ -13,7 +13,7 @@ import { ptBR } from 'date-fns/locale'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadKanbanCards, saveKanbanCard, deleteKanbanCard, loadEventos, uploadKanbanAttachment } from '@/lib/storage'
-import { getGitHubConfig } from '@/lib/github'
+import { getGitHubConfig, getRawUrl } from '@/lib/github'
 import { sendMentionNotification } from '@/lib/emailjs'
 import { extractMentions, generateId, formatDate, formatDateTime, todayISO } from '@/lib/utils'
 import { getPlatform, PLATFORMS, getPlatformBorderColor } from '@/lib/platforms'
@@ -920,8 +920,10 @@ export function Kanban() {
   async function fetchAttachmentBlob(att: Attachment): Promise<Blob> {
     const cfg = getGitHubConfig()
     if (!cfg) throw new Error('GitHub não configurado')
-    if (!att.url) throw new Error(`URL não disponível para ${att.name}`)
-    const res = await fetch(att.url, {
+    // url may be absent on attachments saved before this field was introduced;
+    // reconstruct it from path in that case
+    const rawUrl = att.url ?? getRawUrl(cfg, att.path)
+    const res = await fetch(rawUrl, {
       headers: { Authorization: `Bearer ${cfg.token}` },
     })
     if (!res.ok) throw new Error(`HTTP ${res.status} ao buscar ${att.name}`)
@@ -943,14 +945,15 @@ export function Kanban() {
     }
   }
 
-  async function exportCardZip(card: KanbanCard) {
+  // attachments defaults to the card's own saved list when called outside
+  // the dialog; the dialog passes cardAttachments so live edits are included
+  async function exportCardZip(card: KanbanCard, attachments: Attachment[] = card.attachments ?? []) {
     try {
       const zip = new JSZip()
       zip.file(`${card.id}.md`, cardToMarkdown(card))
 
-      // Fetch each attachment via raw URL (no 1 MB size limit vs Contents API)
-      if (card.attachments?.length) {
-        await Promise.all(card.attachments.map(async att => {
+      if (attachments.length) {
+        await Promise.all(attachments.map(async att => {
           try {
             const blob = await fetchAttachmentBlob(att)
             zip.file(att.name, await blob.arrayBuffer())
@@ -970,7 +973,7 @@ export function Kanban() {
   async function handleDownloadCard(card: KanbanCard, fmt: 'md' | 'docx' | 'zip') {
     if (fmt === 'md') await exportCardMd(card)
     else if (fmt === 'docx') await exportCardDocx(card)
-    else await exportCardZip(card)
+    else await exportCardZip(card) // uses card.attachments (saved data)
   }
 
   async function onDragEnd(result: DropResult) {
@@ -1554,15 +1557,13 @@ export function Kanban() {
                       <span className="text-[10px] text-gray-400 flex-shrink-0">
                         {att.size < 1024 * 1024 ? `${(att.size / 1024).toFixed(0)} KB` : `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
                       </span>
-                      {editCard && (
-                        <button
-                          onClick={() => downloadAttachment(att)}
-                          className="text-gray-300 hover:text-blue-500 flex-shrink-0"
-                          title="Baixar original"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => downloadAttachment(att)}
+                        className="text-gray-400 hover:text-blue-500 flex-shrink-0"
+                        title="Baixar original"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
                       <button
                         onClick={() => setCardAttachments(prev => prev.filter(a => a.id !== att.id))}
                         className="text-gray-300 hover:text-red-400 flex-shrink-0"
@@ -1599,7 +1600,7 @@ export function Kanban() {
                 <Button variant="outline" size="sm" onClick={() => exportCardDocx(editCard)}>
                   <FileType2 className="w-4 h-4 text-blue-500" /> Word (.docx)
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => exportCardZip(editCard)}>
+                <Button variant="outline" size="sm" onClick={() => exportCardZip(editCard, cardAttachments)}>
                   <FolderArchive className="w-4 h-4 text-amber-500" /> ZIP
                 </Button>
               </div>
