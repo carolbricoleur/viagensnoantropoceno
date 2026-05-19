@@ -35,7 +35,7 @@ export async function sendMentionNotification(params: {
   excerpt: string
 }): Promise<void> {
   const cfg = getEmailJSConfig()
-  if (!cfg) return
+  if (!cfg) throw new Error('EmailJS não configurado — verifique as configurações do projeto')
 
   // Do NOT catch here — let errors propagate so callers can show real feedback
   await emailjs.send(
