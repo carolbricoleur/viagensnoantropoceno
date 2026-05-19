@@ -673,7 +673,9 @@ export function Kanban() {
             excerpt: `Você foi designado(a) como responsável pelo conteúdo "${cardTitle.trim()}".`,
           })
           toast({ title: 'Responsável notificado', description: cardAssignee })
-        } catch { /* notification failure should not block save */ }
+        } catch (err) {
+          toast({ title: `Falha ao notificar responsável`, description: String(err), variant: 'destructive' })
+        }
       }
 
       // Reviewer notification — dedicated message
@@ -687,7 +689,9 @@ export function Kanban() {
             excerpt: `Você foi designado(a) como revisor(a) do conteúdo "${cardTitle.trim()}".`,
           })
           toast({ title: 'Revisor notificado', description: cardReviewer })
-        } catch { /* notification failure should not block save */ }
+        } catch (err) {
+          toast({ title: `Falha ao notificar revisor`, description: String(err), variant: 'destructive' })
+        }
       }
 
       // Immediate transfer: if card is in agendamento and scheduledAt <= today, move to publicacao now
@@ -841,7 +845,10 @@ export function Kanban() {
           moduleName: 'Kanban',
           excerpt: `Você foi atribuído ao card "${updated.title}".`,
         })
-      } catch { /* notification failure should not block inline save */ }
+        toast({ title: 'Responsável notificado', description: patch.assignee })
+      } catch (err) {
+        toast({ title: 'Falha ao notificar responsável', description: String(err), variant: 'destructive' })
+      }
     }
   }
 
@@ -873,7 +880,9 @@ export function Kanban() {
           moduleName: 'Kanban',
           excerpt: `A revisão do conteúdo "${card.title}" foi concluída. O conteúdo está aprovado e pronto para avançar.`,
         })
-      } catch { /* notification failure should not block */ }
+      } catch (err) {
+        toast({ title: 'Falha ao notificar sobre revisão', description: String(err), variant: 'destructive' })
+      }
     }
     toast({
       title: !wasRevisado ? 'Revisão concluída' : 'Revisão desmarcada',

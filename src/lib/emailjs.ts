@@ -37,24 +37,21 @@ export async function sendMentionNotification(params: {
   const cfg = getEmailJSConfig()
   if (!cfg) return
 
-  try {
-    await emailjs.send(
-      cfg.serviceId,
-      cfg.templateId,
-      {
-        from_email: 'noreply@xoxolab.app',  // fixed sender — prevents auto-reply loops
-        sender_email: params.mentionerEmail, // actual user displayed in template body
-        to_email: params.mentionedEmail,
-        project_name: params.projectName,
-        module_name: params.moduleName,
-        excerpt: params.excerpt.slice(0, 300),
-        notification_type: 'mention',
-      },
-      cfg.publicKey
-    )
-  } catch (err) {
-    console.error('EmailJS mention notification failed:', err)
-  }
+  // Do NOT catch here — let errors propagate so callers can show real feedback
+  await emailjs.send(
+    cfg.serviceId,
+    cfg.templateId,
+    {
+      from_email: 'noreply@xoxolab.app',  // fixed sender — prevents auto-reply loops
+      sender_email: params.mentionerEmail, // actual user displayed in template body
+      to_email: params.mentionedEmail,
+      project_name: params.projectName,
+      module_name: params.moduleName,
+      excerpt: params.excerpt.slice(0, 300),
+      notification_type: 'mention',
+    },
+    cfg.publicKey
+  )
 }
 
 export async function sendCalendarReminder(params: {
