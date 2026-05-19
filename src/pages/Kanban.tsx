@@ -13,7 +13,7 @@ import { ptBR } from 'date-fns/locale'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadKanbanCards, saveKanbanCard, deleteKanbanCard, loadEventos, uploadKanbanAttachment } from '@/lib/storage'
-import { readFile, getGitHubConfig } from '@/lib/github'
+import { getGitHubConfig } from '@/lib/github'
 import { sendMentionNotification } from '@/lib/emailjs'
 import { extractMentions, generateId, formatDate, formatDateTime, todayISO } from '@/lib/utils'
 import { getPlatform, PLATFORMS, getPlatformBorderColor } from '@/lib/platforms'
@@ -916,22 +916,44 @@ export function Kanban() {
     }
   }
 
+  /** Fetch an attachment at full original quality using the raw URL + auth token */
+  async function fetchAttachmentBlob(att: Attachment): Promise<Blob> {
+    const cfg = getGitHubConfig()
+    if (!cfg) throw new Error('GitHub não configurado')
+    if (!att.url) throw new Error(`URL não disponível para ${att.name}`)
+    const res = await fetch(att.url, {
+      headers: { Authorization: `Bearer ${cfg.token}` },
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status} ao buscar ${att.name}`)
+    return res.blob()
+  }
+
+  /** Download a single attachment at full original resolution */
+  async function downloadAttachment(att: Attachment) {
+    try {
+      const blob = await fetchAttachmentBlob(att)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = att.name
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast({ title: 'Erro ao baixar arquivo', description: String(err), variant: 'destructive' })
+    }
+  }
+
   async function exportCardZip(card: KanbanCard) {
     try {
       const zip = new JSZip()
       zip.file(`${card.id}.md`, cardToMarkdown(card))
 
-      // Fetch each attachment from GitHub and add to ZIP
-      const cfg = getGitHubConfig()
-      if (cfg && card.attachments?.length) {
+      // Fetch each attachment via raw URL (no 1 MB size limit vs Contents API)
+      if (card.attachments?.length) {
         await Promise.all(card.attachments.map(async att => {
           try {
-            const ghFile = await readFile(cfg, att.path)
-            const raw = ghFile.content.replace(/\n/g, '')
-            const binary = atob(raw)
-            const bytes = new Uint8Array(binary.length)
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-            zip.file(att.name, bytes)
+            const blob = await fetchAttachmentBlob(att)
+            zip.file(att.name, await blob.arrayBuffer())
           } catch { /* skip unreachable files */ }
         }))
       }
@@ -1523,15 +1545,24 @@ export function Kanban() {
               {cardAttachments.length > 0 && (
                 <div className="space-y-1">
                   {cardAttachments.map(att => (
-                    <div key={att.id} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-1.5">
+                    <div key={att.id} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 rounded px-3 py-1.5">
                       {att.thumbnail
                         ? <img src={att.thumbnail} alt={att.name} className="w-10 h-10 object-cover rounded flex-shrink-0 border border-gray-200" />
                         : <Paperclip className="w-4 h-4 text-gray-400 flex-shrink-0" />
                       }
-                      <span className="text-xs text-gray-700 flex-1 truncate">{att.name}</span>
+                      <span className="text-xs text-gray-700 dark:text-gray-200 flex-1 truncate">{att.name}</span>
                       <span className="text-[10px] text-gray-400 flex-shrink-0">
                         {att.size < 1024 * 1024 ? `${(att.size / 1024).toFixed(0)} KB` : `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
                       </span>
+                      {editCard && (
+                        <button
+                          onClick={() => downloadAttachment(att)}
+                          className="text-gray-300 hover:text-blue-500 flex-shrink-0"
+                          title="Baixar original"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={() => setCardAttachments(prev => prev.filter(a => a.id !== att.id))}
                         className="text-gray-300 hover:text-red-400 flex-shrink-0"
