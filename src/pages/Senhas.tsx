@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Eye, EyeOff, X, KeyRound, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Eye, EyeOff, X, KeyRound, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadSenhas, saveSenhas } from '@/lib/storage'
 import { PLATFORMS, getPlatform } from '@/lib/platforms'
@@ -32,6 +32,7 @@ export function Senhas() {
   const [sCustomPlatform, setSCustomPlatform] = useState('')
   const [saving, setSaving] = useState(false)
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set())
+  const [copiedIds, setCopiedIds] = useState<Set<string>>(new Set())
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
   const { data: senhas = [], isLoading } = useQuery({
@@ -113,6 +114,15 @@ export function Senhas() {
     })
   }
 
+  function copyPassword(id: string, password: string) {
+    navigator.clipboard.writeText(password).then(() => {
+      setCopiedIds(prev => new Set(prev).add(id))
+      setTimeout(() => setCopiedIds(prev => { const n = new Set(prev); n.delete(id); return n }), 2000)
+    }).catch(() => {
+      toast({ title: 'Não foi possível copiar', variant: 'destructive' })
+    })
+  }
+
   function renderRow(row: SenhaRow, depth = 0) {
     const platform = row.platformId === 'outra' ? null : getPlatform(row.platformId ?? '')
     const customLabel = row.platformId === 'outra' ? (row.customPlatform || 'Outra') : null
@@ -160,8 +170,11 @@ export function Senhas() {
             <span className="text-sm text-gray-600 dark:text-gray-300 font-mono flex-1 truncate">
               {showPass ? row.password : '••••••••'}
             </span>
-            <button onClick={() => togglePassword(row.id)} className="text-gray-300 hover:text-gray-500 flex-shrink-0">
+            <button onClick={() => togglePassword(row.id)} className="text-gray-300 hover:text-gray-500 flex-shrink-0" title={showPass ? 'Ocultar senha' : 'Mostrar senha'}>
               {showPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+            <button onClick={() => copyPassword(row.id, row.password)} className="text-gray-300 hover:text-purple-500 flex-shrink-0 transition-colors" title="Copiar senha">
+              {copiedIds.has(row.id) ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           </div>
 
