@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
+import JSZip from 'jszip'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
 import {
@@ -12,7 +13,7 @@ import { ptBR } from 'date-fns/locale'
 import { useAuth } from '@/contexts/AuthContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { loadKanbanCards, saveKanbanCard, deleteKanbanCard, loadEventos, uploadKanbanAttachment } from '@/lib/storage'
-import { readFile, getGitHubConfig } from '@/lib/github'
+import { getGitHubConfig, readFileBinary } from '@/lib/github'
 import { sendMentionNotification } from '@/lib/emailjs'
 import { extractMentions, generateId, formatDate, formatDateTime, todayISO } from '@/lib/utils'
 import { getPlatform, PLATFORMS, getPlatformBorderColor } from '@/lib/platforms'
@@ -582,21 +583,16 @@ export function Kanban() {
     try {
       const now = new Date().toISOString()
       const newMentions = extractMentions(cardDesc)
-      // Always notify all @mentions in body on every save
-      const toNotify = new Set(newMentions)
+      // @mentions from body text — notified after save
+      const mentionsToNotify = new Set(newMentions)
 
       const platforms = cardCustomPlatform.trim()
         ? [...new Set([...cardPlatforms, cardCustomPlatform.trim()])]
         : cardPlatforms
 
-      // Notify assignee if newly set
-      if (cardAssignee && cardAssignee !== editCard?.assignee) {
-        toNotify.add(cardAssignee)
-      }
-      // Notify reviewer if newly set
-      if (cardReviewer && cardReviewer !== editCard?.reviewer) {
-        toNotify.add(cardReviewer)
-      }
+      // Track whether assignee / reviewer are newly set (notified after save with dedicated messages)
+      const assigneeIsNew = !!(cardAssignee && cardAssignee !== editCard?.assignee)
+      const reviewerIsNew = !!(cardReviewer && cardReviewer !== editCard?.reviewer)
 
       let card: KanbanCard
       if (editCard) {
@@ -650,7 +646,8 @@ export function Kanban() {
         queryClient.setQueryData(['kanban', projectId], (prev: KanbanCard[] = []) => [...prev, card])
       }
 
-      for (const email of toNotify) {
+      // @mention notifications — body text
+      for (const email of mentionsToNotify) {
         try {
           await sendMentionNotification({
             mentionerEmail: session!.email,
@@ -662,6 +659,38 @@ export function Kanban() {
           toast({ title: 'Notificação enviada', description: email })
         } catch (notifyErr) {
           toast({ title: `Falha ao notificar ${email}`, description: String(notifyErr), variant: 'destructive' })
+        }
+      }
+
+      // Assignee notification — dedicated message
+      if (assigneeIsNew) {
+        try {
+          await sendMentionNotification({
+            mentionerEmail: session!.email,
+            mentionedEmail: cardAssignee,
+            projectName: projectMeta?.name ?? projectId,
+            moduleName: 'Kanban',
+            excerpt: `Você foi designado(a) como responsável pelo conteúdo "${cardTitle.trim()}".`,
+          })
+          toast({ title: 'Responsável notificado', description: cardAssignee })
+        } catch (err) {
+          toast({ title: `Falha ao notificar responsável`, description: String(err), variant: 'destructive' })
+        }
+      }
+
+      // Reviewer notification — dedicated message
+      if (reviewerIsNew) {
+        try {
+          await sendMentionNotification({
+            mentionerEmail: session!.email,
+            mentionedEmail: cardReviewer,
+            projectName: projectMeta?.name ?? projectId,
+            moduleName: 'Kanban',
+            excerpt: `Você foi designado(a) como revisor(a) do conteúdo "${cardTitle.trim()}".`,
+          })
+          toast({ title: 'Revisor notificado', description: cardReviewer })
+        } catch (err) {
+          toast({ title: `Falha ao notificar revisor`, description: String(err), variant: 'destructive' })
         }
       }
 
@@ -816,7 +845,10 @@ export function Kanban() {
           moduleName: 'Kanban',
           excerpt: `Você foi atribuído ao card "${updated.title}".`,
         })
-      } catch { /* notification failure should not block inline save */ }
+        toast({ title: 'Responsável notificado', description: patch.assignee })
+      } catch (err) {
+        toast({ title: 'Falha ao notificar responsável', description: String(err), variant: 'destructive' })
+      }
     }
   }
 
@@ -848,7 +880,9 @@ export function Kanban() {
           moduleName: 'Kanban',
           excerpt: `A revisão do conteúdo "${card.title}" foi concluída. O conteúdo está aprovado e pronto para avançar.`,
         })
-      } catch { /* notification failure should not block */ }
+      } catch (err) {
+        toast({ title: 'Falha ao notificar sobre revisão', description: String(err), variant: 'destructive' })
+      }
     }
     toast({
       title: !wasRevisado ? 'Revisão concluída' : 'Revisão desmarcada',
@@ -891,23 +925,45 @@ export function Kanban() {
     }
   }
 
-  async function exportCardZip(card: KanbanCard) {
+  /**
+   * Fetch an attachment at full original quality via the GitHub Contents API
+   * (Accept: application/vnd.github.raw).  Using api.github.com instead of
+   * raw.githubusercontent.com avoids the CORS restriction that prevents
+   * sending Authorization headers to the wildcard-origin CDN endpoint.
+   */
+  async function fetchAttachmentBlob(att: Attachment): Promise<Blob> {
+    const cfg = getGitHubConfig()
+    if (!cfg) throw new Error('GitHub não configurado')
+    return readFileBinary(cfg, att.path)
+  }
+
+  /** Download a single attachment at full original resolution */
+  async function downloadAttachment(att: Attachment) {
     try {
-      const JSZip = (await import('jszip')).default
+      const blob = await fetchAttachmentBlob(att)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = att.name
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast({ title: 'Erro ao baixar arquivo', description: String(err), variant: 'destructive' })
+    }
+  }
+
+  // attachments defaults to the card's own saved list when called outside
+  // the dialog; the dialog passes cardAttachments so live edits are included
+  async function exportCardZip(card: KanbanCard, attachments: Attachment[] = card.attachments ?? []) {
+    try {
       const zip = new JSZip()
       zip.file(`${card.id}.md`, cardToMarkdown(card))
 
-      // Fetch each attachment from GitHub and add to ZIP
-      const cfg = getGitHubConfig()
-      if (cfg && card.attachments?.length) {
-        await Promise.all(card.attachments.map(async att => {
+      if (attachments.length) {
+        await Promise.all(attachments.map(async att => {
           try {
-            const ghFile = await readFile(cfg, att.path)
-            const raw = ghFile.content.replace(/\n/g, '')
-            const binary = atob(raw)
-            const bytes = new Uint8Array(binary.length)
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-            zip.file(att.name, bytes)
+            const blob = await fetchAttachmentBlob(att)
+            zip.file(att.name, await blob.arrayBuffer())
           } catch { /* skip unreachable files */ }
         }))
       }
@@ -924,7 +980,7 @@ export function Kanban() {
   async function handleDownloadCard(card: KanbanCard, fmt: 'md' | 'docx' | 'zip') {
     if (fmt === 'md') await exportCardMd(card)
     else if (fmt === 'docx') await exportCardDocx(card)
-    else await exportCardZip(card)
+    else await exportCardZip(card) // uses card.attachments (saved data)
   }
 
   async function onDragEnd(result: DropResult) {
@@ -1499,15 +1555,22 @@ export function Kanban() {
               {cardAttachments.length > 0 && (
                 <div className="space-y-1">
                   {cardAttachments.map(att => (
-                    <div key={att.id} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-1.5">
+                    <div key={att.id} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 rounded px-3 py-1.5">
                       {att.thumbnail
                         ? <img src={att.thumbnail} alt={att.name} className="w-10 h-10 object-cover rounded flex-shrink-0 border border-gray-200" />
                         : <Paperclip className="w-4 h-4 text-gray-400 flex-shrink-0" />
                       }
-                      <span className="text-xs text-gray-700 flex-1 truncate">{att.name}</span>
+                      <span className="text-xs text-gray-700 dark:text-gray-200 flex-1 truncate">{att.name}</span>
                       <span className="text-[10px] text-gray-400 flex-shrink-0">
                         {att.size < 1024 * 1024 ? `${(att.size / 1024).toFixed(0)} KB` : `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
                       </span>
+                      <button
+                        onClick={() => downloadAttachment(att)}
+                        className="text-gray-400 hover:text-blue-500 flex-shrink-0"
+                        title="Baixar original"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
                       <button
                         onClick={() => setCardAttachments(prev => prev.filter(a => a.id !== att.id))}
                         className="text-gray-300 hover:text-red-400 flex-shrink-0"
@@ -1544,7 +1607,7 @@ export function Kanban() {
                 <Button variant="outline" size="sm" onClick={() => exportCardDocx(editCard)}>
                   <FileType2 className="w-4 h-4 text-blue-500" /> Word (.docx)
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => exportCardZip(editCard)}>
+                <Button variant="outline" size="sm" onClick={() => exportCardZip(editCard, cardAttachments)}>
                   <FolderArchive className="w-4 h-4 text-amber-500" /> ZIP
                 </Button>
               </div>

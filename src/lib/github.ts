@@ -90,6 +90,30 @@ export async function readFile(cfg: GitHubConfig, filePath: string): Promise<GHF
   )
 }
 
+/**
+ * Fetch a file as a raw binary Blob via the GitHub Contents API using the
+ * `application/vnd.github.raw` media type.  This avoids:
+ *  - the 1 MB base64 encoding limit of the default JSON response
+ *  - CORS issues with raw.githubusercontent.com which rejects Authorization
+ *    headers when its wildcard `Access-Control-Allow-Origin: *` is active
+ */
+export async function readFileBinary(cfg: GitHubConfig, filePath: string): Promise<Blob> {
+  const res = await fetch(
+    `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${filePath}?ref=${cfg.branch}`,
+    {
+      headers: {
+        Authorization: `Bearer ${cfg.token}`,
+        Accept: 'application/vnd.github.raw',
+      },
+    }
+  )
+  if (!res.ok) {
+    const msg = await res.text().catch(() => String(res.status))
+    throw new Error(`GitHub ${res.status}: ${msg}`)
+  }
+  return res.blob()
+}
+
 export async function writeTextFile(
   cfg: GitHubConfig,
   filePath: string,
